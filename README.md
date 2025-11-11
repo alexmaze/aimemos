@@ -109,6 +109,18 @@ Search memos:
 curl "http://localhost:8000/api/v1/memos/search?q=first"
 ```
 
+### Demo Script
+
+A demo script is provided to showcase the API functionality:
+
+```bash
+# Install demo dependencies
+uv sync --extra demo
+
+# Run the demo (make sure the server is running first)
+uv run python demo.py
+```
+
 ## Development
 
 ### Project Structure
@@ -123,6 +135,7 @@ aimemos/
 │   ├── models.py      # Pydantic models
 │   ├── routes.py      # API routes
 │   └── storage.py     # Data storage layer
+├── demo.py            # Demo script
 ├── .env.example       # Example environment file
 ├── pyproject.toml     # Project dependencies
 └── uv.lock            # Lock file for dependencies
