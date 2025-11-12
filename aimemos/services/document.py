@@ -113,6 +113,8 @@ class DocumentService:
         Raises:
             ValueError: 文件格式不支持或其他错误
         """
+        from uuid import uuid4
+        
         # 验证知识库存在
         kb = self.kb_repository.get_by_id(user_id, kb_id)
         if not kb:
@@ -122,16 +124,17 @@ class DocumentService:
         if not self.file_handler.is_supported_format(file.filename):
             raise ValueError(f"不支持的文件格式: {file.filename}")
         
-        # 确定存储路径 - 使用安全的路径组件
+        # 生成文档ID（提前生成，用于文件名）
+        doc_id = str(uuid4())
+        
+        # 获取文件扩展名
+        file_format = self.file_handler.get_file_format(file.filename)
+        
+        # 确定存储路径 - 扁平化存储，按知识库组织
         storage_root = Path(self.settings.storage_root).resolve()
         safe_user_id = sanitize_path_component(user_id)
         safe_kb_id = sanitize_path_component(kb_id)
         kb_dir = storage_root / safe_user_id / safe_kb_id
-        
-        # 如果有文件夹，按文件夹路径组织
-        if folder_id:
-            safe_folder_id = sanitize_path_component(folder_id)
-            kb_dir = kb_dir / safe_folder_id
         
         # 确保目录在storage_root之内（防止路径遍历）
         kb_dir = kb_dir.resolve()
@@ -140,11 +143,8 @@ class DocumentService:
         
         kb_dir.mkdir(parents=True, exist_ok=True)
         
-        # 生成唯一的文件名（保留原始扩展名）- 清理文件名
-        file_format = self.file_handler.get_file_format(file.filename)
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        safe_original_name = sanitize_path_component(file.filename)
-        safe_filename = f"{timestamp}_{safe_original_name}"
+        # 使用文档UUID作为文件名，保留原始扩展名
+        safe_filename = f"{doc_id}.{file_format}" if file_format else doc_id
         file_path = kb_dir / safe_filename
         
         # 再次验证最终路径在storage_root内
@@ -176,8 +176,9 @@ class DocumentService:
         # 计算相对路径
         relative_path = str(file_path.relative_to(storage_root))
         
-        # 创建文档记录
+        # 创建文档记录（使用预先生成的doc_id）
         return self.repository.create_uploaded(
+            doc_id=doc_id,
             user_id=user_id,
             kb_id=kb_id,
             name=file.filename,

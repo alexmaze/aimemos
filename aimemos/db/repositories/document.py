@@ -180,6 +180,7 @@ class DocumentRepository:
     
     def create_uploaded(
         self,
+        doc_id: str,
         user_id: str,
         kb_id: str,
         name: str,
@@ -192,8 +193,12 @@ class DocumentRepository:
         source_file_modified_at: Optional[datetime] = None,
         summary: Optional[str] = None
     ) -> Document:
-        """创建上传文档记录。"""
-        doc_id = str(uuid4())
+        """创建上传文档记录。
+        
+        Args:
+            doc_id: 文档ID（预先生成，用于文件命名）
+            其他参数同上
+        """
         now = datetime.utcnow()
         
         with self.db.get_connection() as conn:
