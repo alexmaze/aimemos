@@ -9,9 +9,14 @@
 - **FastAPI**: 高性能 Web 框架
 - **PocketFlow**: AI 工作流框架
 - **Pydantic**: 数据验证和设置管理
+- **JWT**: JSON Web Token 认证
 
 ## 功能特性
 
+- 用户注册和登录认证系统
+- 基于 JWT 的安全认证
+- 用户数据隔离（每个用户只能访问自己的数据）
+- 可配置的自动注册功能
 - 创建、读取、更新和删除备忘录
 - 按标题、内容或标签搜索备忘录
 - 带自动文档的 RESTful API
@@ -42,6 +47,7 @@ uv sync
 ```bash
 cp .env.example .env
 # 根据您的需要编辑 .env
+# 重要：修改 SECRET_KEY 为您自己的密钥
 ```
 
 ## 使用方法
@@ -77,7 +83,12 @@ uv run python -m aimemos.main
 - `GET /` - 根端点，返回服务信息
 - `GET /health` - 健康检查端点
 
-#### 备忘录
+#### 用户认证
+
+- `POST /api/v1/auth/register` - 用户注册（如果启用了自动注册）
+- `POST /api/v1/auth/login` - 用户登录
+
+#### 备忘录（需要认证）
 
 - `POST /api/v1/memos` - 创建新备忘录
 - `GET /api/v1/memos` - 列出所有备忘录（支持分页）
@@ -88,10 +99,44 @@ uv run python -m aimemos.main
 
 ### 使用示例
 
-创建备忘录：
+#### 1. 用户注册和登录
+
+注册新用户：
 ```bash
+curl -X POST "http://localhost:8000/api/v1/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "myuser",
+    "password": "mypassword"
+  }'
+```
+
+用户登录：
+```bash
+curl -X POST "http://localhost:8000/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "myuser",
+    "password": "mypassword"
+  }'
+```
+
+返回的响应包含访问令牌（access_token），您需要在后续请求中使用它。
+
+#### 2. 使用令牌访问备忘录 API
+
+创建备忘录（需要认证）：
+```bash
+# 首先获取令牌
+TOKEN=$(curl -s -X POST "http://localhost:8000/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"myuser","password":"mypassword"}' | \
+  python -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
+# 使用令牌创建备忘录
 curl -X POST "http://localhost:8000/api/v1/memos" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "title": "我的第一条备忘录",
     "content": "这是备忘录的内容",
@@ -99,14 +144,16 @@ curl -X POST "http://localhost:8000/api/v1/memos" \
   }'
 ```
 
-列出备忘录：
+列出备忘录（需要认证）：
 ```bash
-curl "http://localhost:8000/api/v1/memos"
+curl "http://localhost:8000/api/v1/memos" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-搜索备忘录：
+搜索备忘录（需要认证）：
 ```bash
-curl "http://localhost:8000/api/v1/memos/search?q=第一条"
+curl "http://localhost:8000/api/v1/memos/search?q=第一条" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### 演示脚本
@@ -130,7 +177,9 @@ aimemos/
 ├── aimemos/           # 主包
 │   ├── __init__.py    # 包初始化
 │   ├── app.py         # FastAPI 应用
+│   ├── auth.py        # 用户认证
 │   ├── config.py      # 配置管理
+│   ├── dependencies.py # FastAPI 依赖项
 │   ├── main.py        # 入口点
 │   ├── models.py      # Pydantic 模型
 │   ├── routes.py      # API 路由
@@ -150,6 +199,26 @@ aimemos/
 - `DEBUG`: 调试模式（默认：false）
 - `APP_NAME`: 应用名称
 - `APP_VERSION`: 应用版本
+- `SECRET_KEY`: JWT 签名密钥（生产环境必须修改）
+- `ALGORITHM`: JWT 签名算法（默认：HS256）
+- `ACCESS_TOKEN_EXPIRE_MINUTES`: 访问令牌过期时间（默认：30 分钟）
+- `ENABLE_AUTO_REGISTRATION`: 是否开启自动注册功能（默认：true）
+- `HOST`: 服务器主机地址（默认：0.0.0.0）
+- `PORT`: 服务器端口（默认：8000）
+- `DEBUG`: 调试模式（默认：false）
+- `APP_NAME`: 应用名称
+- `APP_VERSION`: 应用版本
+- `SECRET_KEY`: JWT 签名密钥（生产环境必须修改）
+- `ALGORITHM`: JWT 签名算法（默认：HS256）
+- `ACCESS_TOKEN_EXPIRE_MINUTES`: 访问令牌过期时间（默认：30 分钟）
+- `ENABLE_AUTO_REGISTRATION`: 是否开启自动注册功能（默认：true）
+
+### 安全注意事项
+
+1. **SECRET_KEY**: 生产环境中必须更改为强随机密钥
+2. **HTTPS**: 生产环境中应使用 HTTPS 来保护令牌传输
+3. **密码策略**: 建议设置最小密码长度为 6 个字符
+4. **自动注册**: 生产环境中可以关闭 `ENABLE_AUTO_REGISTRATION` 以控制用户访问
 
 ## 许可证
 

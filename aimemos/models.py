@@ -31,6 +31,7 @@ class Memo(MemoBase):
     """完整的备忘录模型，包含元数据。"""
     
     id: str
+    user_id: str  # 所属用户ID
     created_at: datetime
     updated_at: datetime
     
