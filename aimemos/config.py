@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # 相对路径是相对于应用启动时的当前工作目录
     database_url: str = "sqlite:///./aimemos.db"
     
+    # 文件存储配置
+    # 知识库文件存储根目录
+    storage_root: str = "./storage"
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
