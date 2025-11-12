@@ -19,6 +19,13 @@ class DocumentCreate(DocumentBase):
     content: str = Field("", description="Markdown内容")
 
 
+class FolderCreate(BaseModel):
+    """创建新文件夹的模型。"""
+    
+    name: str = Field(..., min_length=1, max_length=200, description="文件夹名称")
+    folder_id: Optional[str] = Field(None, description="父文件夹ID（folder_id表示父文件夹）")
+
+
 class DocumentUpdate(BaseModel):
     """更新文档的模型。"""
     
@@ -35,8 +42,11 @@ class DocumentResponse(DocumentBase):
     knowledge_base_id: str = Field(..., description="所属知识库ID")
     folder_id: Optional[str] = Field(None, description="所属文件夹ID")
     user_id: str = Field(..., description="所属用户ID")
-    doc_type: str = Field(..., description="文档类型: uploaded 或 note")
-    content: str = Field(..., description="文档内容")
+    doc_type: str = Field(..., description="文档类型: folder, note 或 uploaded")
+    content: str = Field("", description="文档内容")
+    
+    # 文件夹特有字段
+    path: Optional[str] = Field(None, description="文件夹路径（仅用于folder类型）")
     
     # 源文件信息（仅适用于上传文档）
     source_file_path: Optional[str] = Field(None, description="源文件路径")
@@ -55,7 +65,7 @@ class DocumentResponse(DocumentBase):
 class DocumentListResponse(BaseModel):
     """文档列表响应模型，包含分页信息。"""
     
-    items: list[DocumentResponse] = Field(..., description="文档列表")
+    items: list[DocumentResponse] = Field(..., description="文档列表（包含文件夹和文件）")
     total: int = Field(..., description="总数")
     skip: int = Field(..., description="跳过数量")
     limit: int = Field(..., description="限制数量")

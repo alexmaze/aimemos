@@ -22,7 +22,7 @@ class DocumentRepository:
         with self.db.get_connection() as conn:
             cursor = conn.cursor()
             
-            # 创建文档表
+            # 创建文档表（包含文件夹）
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS documents (
                     id TEXT PRIMARY KEY,
@@ -32,7 +32,8 @@ class DocumentRepository:
                     name TEXT NOT NULL,
                     doc_type TEXT NOT NULL,
                     summary TEXT,
-                    content TEXT NOT NULL,
+                    content TEXT NOT NULL DEFAULT '',
+                    path TEXT,
                     source_file_path TEXT,
                     source_file_size INTEGER,
                     source_file_format TEXT,
@@ -41,7 +42,7 @@ class DocumentRepository:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases (id) ON DELETE CASCADE,
-                    FOREIGN KEY (folder_id) REFERENCES folders (id) ON DELETE SET NULL,
+                    FOREIGN KEY (folder_id) REFERENCES documents (id) ON DELETE CASCADE,
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
                 )
             """)
@@ -60,6 +61,11 @@ class DocumentRepository:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_documents_user_id 
                 ON documents (user_id)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_documents_type 
+                ON documents (doc_type)
             """)
             
             conn.commit()
@@ -104,6 +110,70 @@ class DocumentRepository:
             doc_type='note',
             summary=doc_data.summary,
             content=doc_data.content,
+            created_at=now,
+            updated_at=now,
+        )
+    
+    def create_folder(
+        self,
+        user_id: str,
+        kb_id: str,
+        name: str,
+        parent_folder_id: Optional[str] = None
+    ) -> Document:
+        """创建文件夹（作为特殊类型的文档）。"""
+        folder_id = str(uuid4())
+        now = datetime.utcnow()
+        
+        # 构建路径
+        if not parent_folder_id:
+            path = f"/{name}"
+        else:
+            # 获取父文件夹路径
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT path FROM documents WHERE id = ? AND knowledge_base_id = ? AND doc_type = 'folder'",
+                    (parent_folder_id, kb_id)
+                )
+                row = cursor.fetchone()
+                if not row:
+                    raise ValueError("父文件夹不存在")
+                parent_path = row["path"]
+                path = f"{parent_path}/{name}"
+        
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO documents (
+                    id, knowledge_base_id, folder_id, user_id, name, doc_type, 
+                    summary, content, path, created_at, updated_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    folder_id,
+                    kb_id,
+                    parent_folder_id,
+                    user_id,
+                    name,
+                    'folder',
+                    None,
+                    '',
+                    path,
+                    now.isoformat(),
+                    now.isoformat()
+                )
+            )
+        
+        return Document(
+            id=folder_id,
+            knowledge_base_id=kb_id,
+            folder_id=parent_folder_id,
+            user_id=user_id,
+            name=name,
+            doc_type='folder',
+            summary=None,
+            content='',
+            path=path,
             created_at=now,
             updated_at=now,
         )
@@ -172,12 +242,12 @@ class DocumentRepository:
         )
     
     def get_by_id(self, user_id: str, doc_id: str) -> Optional[Document]:
-        """获取指定文档。"""
+        """获取指定文档或文件夹。"""
         with self.db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """SELECT id, knowledge_base_id, folder_id, user_id, name, doc_type, summary, 
-                          content, source_file_path, source_file_size, source_file_format,
+                          content, path, source_file_path, source_file_size, source_file_format,
                           source_file_created_at, source_file_modified_at, created_at, updated_at
                    FROM documents WHERE id = ? AND user_id = ?""",
                 (doc_id, user_id)
@@ -195,7 +265,8 @@ class DocumentRepository:
                 name=row["name"],
                 doc_type=row["doc_type"],
                 summary=row["summary"],
-                content=row["content"],
+                content=row["content"] or "",
+                path=row["path"],
                 source_file_path=row["source_file_path"],
                 source_file_size=row["source_file_size"],
                 source_file_format=row["source_file_format"],
@@ -213,12 +284,15 @@ class DocumentRepository:
         skip: int = 0, 
         limit: int = 100
     ) -> tuple[list[Document], int]:
-        """列出知识库中的文档，支持按文件夹过滤和分页。"""
+        """列出知识库中的文档和文件夹，支持按文件夹过滤和分页。
+        
+        文件夹会排在前面，然后是文件，这样更符合文件浏览器的体验。
+        """
         with self.db.get_connection() as conn:
             cursor = conn.cursor()
             
             if folder_id is None:
-                # 获取根目录下的文档
+                # 获取根目录下的文档和文件夹
                 cursor.execute(
                     "SELECT COUNT(*) as count FROM documents WHERE knowledge_base_id = ? AND user_id = ? AND folder_id IS NULL",
                     (kb_id, user_id)
@@ -227,15 +301,20 @@ class DocumentRepository:
                 
                 cursor.execute(
                     """SELECT id, knowledge_base_id, folder_id, user_id, name, doc_type, summary, 
-                              content, source_file_path, source_file_size, source_file_format,
+                              content, path, source_file_path, source_file_size, source_file_format,
                               source_file_created_at, source_file_modified_at, created_at, updated_at
                        FROM documents WHERE knowledge_base_id = ? AND user_id = ? AND folder_id IS NULL
-                       ORDER BY created_at DESC
+                       ORDER BY 
+                           CASE doc_type 
+                               WHEN 'folder' THEN 0 
+                               ELSE 1 
+                           END,
+                           name ASC
                        LIMIT ? OFFSET ?""",
                     (kb_id, user_id, limit, skip)
                 )
             else:
-                # 获取指定文件夹下的文档
+                # 获取指定文件夹下的文档和子文件夹
                 cursor.execute(
                     "SELECT COUNT(*) as count FROM documents WHERE knowledge_base_id = ? AND user_id = ? AND folder_id = ?",
                     (kb_id, user_id, folder_id)
@@ -244,10 +323,15 @@ class DocumentRepository:
                 
                 cursor.execute(
                     """SELECT id, knowledge_base_id, folder_id, user_id, name, doc_type, summary, 
-                              content, source_file_path, source_file_size, source_file_format,
+                              content, path, source_file_path, source_file_size, source_file_format,
                               source_file_created_at, source_file_modified_at, created_at, updated_at
                        FROM documents WHERE knowledge_base_id = ? AND user_id = ? AND folder_id = ?
-                       ORDER BY created_at DESC
+                       ORDER BY 
+                           CASE doc_type 
+                               WHEN 'folder' THEN 0 
+                               ELSE 1 
+                           END,
+                           name ASC
                        LIMIT ? OFFSET ?""",
                     (kb_id, user_id, folder_id, limit, skip)
                 )
@@ -261,7 +345,8 @@ class DocumentRepository:
                     name=row["name"],
                     doc_type=row["doc_type"],
                     summary=row["summary"],
-                    content=row["content"],
+                    content=row["content"] or "",
+                    path=row["path"],
                     source_file_path=row["source_file_path"],
                     source_file_size=row["source_file_size"],
                     source_file_format=row["source_file_format"],
@@ -281,7 +366,7 @@ class DocumentRepository:
         doc_id: str, 
         doc_data: DocumentUpdate
     ) -> Optional[Document]:
-        """更新文档（笔记可以更新内容，上传文档只能更新元数据）。"""
+        """更新文档（笔记可以更新内容，上传文档和文件夹只能更新元数据）。"""
         with self.db.get_connection() as conn:
             cursor = conn.cursor()
             
@@ -299,17 +384,33 @@ class DocumentRepository:
             summary = update_dict.get("summary", doc.summary)
             folder_id = update_dict.get("folder_id", doc.folder_id)
             
-            # 如果是笔记，允许更新内容；如果是上传文档，不允许更新内容
+            # 如果是笔记，允许更新内容；如果是上传文档或文件夹，不允许更新内容
             if doc.doc_type == 'note':
                 content = update_dict.get("content", doc.content)
             else:
                 content = doc.content
             
+            # 如果是文件夹且名称或父文件夹改变，需要更新路径
+            path = doc.path
+            if doc.doc_type == 'folder' and (name != doc.name or folder_id != doc.folder_id):
+                if not folder_id:
+                    path = f"/{name}"
+                else:
+                    # 获取父文件夹路径
+                    cursor.execute(
+                        "SELECT path FROM documents WHERE id = ? AND doc_type = 'folder'",
+                        (folder_id,)
+                    )
+                    parent_row = cursor.fetchone()
+                    if parent_row:
+                        parent_path = parent_row["path"]
+                        path = f"{parent_path}/{name}"
+            
             cursor.execute(
                 """UPDATE documents 
-                   SET name = ?, summary = ?, content = ?, folder_id = ?, updated_at = ?
+                   SET name = ?, summary = ?, content = ?, folder_id = ?, path = ?, updated_at = ?
                    WHERE id = ? AND user_id = ?""",
-                (name, summary, content, folder_id, updated_at.isoformat(), doc_id, user_id)
+                (name, summary, content, folder_id, path, updated_at.isoformat(), doc_id, user_id)
             )
             
             return Document(
@@ -321,6 +422,7 @@ class DocumentRepository:
                 doc_type=doc.doc_type,
                 summary=summary,
                 content=content,
+                path=path,
                 source_file_path=doc.source_file_path,
                 source_file_size=doc.source_file_size,
                 source_file_format=doc.source_file_format,
@@ -341,17 +443,18 @@ class DocumentRepository:
             return cursor.rowcount > 0
     
     def search(self, user_id: str, kb_id: str, query: str) -> list[Document]:
-        """搜索知识库中的文档。"""
+        """搜索知识库中的文档（不包括文件夹）。"""
         with self.db.get_connection() as conn:
             cursor = conn.cursor()
             query_pattern = f"%{query.lower()}%"
             
             cursor.execute(
                 """SELECT id, knowledge_base_id, folder_id, user_id, name, doc_type, summary, 
-                          content, source_file_path, source_file_size, source_file_format,
+                          content, path, source_file_path, source_file_size, source_file_format,
                           source_file_created_at, source_file_modified_at, created_at, updated_at
                    FROM documents 
                    WHERE knowledge_base_id = ? AND user_id = ? 
+                   AND doc_type != 'folder'
                    AND (
                        LOWER(name) LIKE ? 
                        OR LOWER(content) LIKE ? 
@@ -370,7 +473,8 @@ class DocumentRepository:
                     name=row["name"],
                     doc_type=row["doc_type"],
                     summary=row["summary"],
-                    content=row["content"],
+                    content=row["content"] or "",
+                    path=row["path"],
                     source_file_path=row["source_file_path"],
                     source_file_size=row["source_file_size"],
                     source_file_format=row["source_file_format"],

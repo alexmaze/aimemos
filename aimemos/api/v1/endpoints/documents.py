@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends, File, UploadFile, 
 
 from ....schemas.document import (
     DocumentCreate,
+    FolderCreate,
     DocumentUpdate,
     DocumentResponse,
     DocumentListResponse,
@@ -28,6 +29,28 @@ async def create_note(
     doc_service = get_document_service()
     try:
         return doc_service.create_note(current_user, kb_id, document)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/folder", response_model=DocumentResponse, status_code=201, summary="创建文件夹")
+async def create_folder(
+    kb_id: str = Query(..., description="知识库ID"),
+    folder: FolderCreate = None,
+    current_user: str = Depends(get_current_user)
+):
+    """创建新文件夹。
+    
+    需要认证。文件夹作为一种特殊的文档类型（doc_type='folder'）。
+    """
+    doc_service = get_document_service()
+    try:
+        return doc_service.create_folder(
+            current_user, 
+            kb_id, 
+            folder.name, 
+            folder.folder_id
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -57,7 +80,7 @@ async def upload_document(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("", response_model=DocumentListResponse, summary="列出文档")
+@router.get("", response_model=DocumentListResponse, summary="列出文档和文件夹")
 async def list_documents(
     kb_id: str = Query(..., description="知识库ID"),
     folder_id: Optional[str] = Query(None, description="文件夹ID"),
@@ -65,9 +88,10 @@ async def list_documents(
     limit: int = Query(100, ge=1, le=1000, description="返回的最大数量"),
     current_user: str = Depends(get_current_user)
 ):
-    """列出知识库中的文档，支持按文件夹过滤和分页。
+    """列出知识库中的文档和文件夹，支持按文件夹过滤和分页。
     
-    需要认证。只返回当前用户的文档。
+    需要认证。只返回当前用户的文档和文件夹。
+    文件夹（doc_type='folder'）会排在文件前面。
     """
     doc_service = get_document_service()
     items, total = doc_service.list_documents(

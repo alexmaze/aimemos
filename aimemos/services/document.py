@@ -65,6 +65,31 @@ class DocumentService:
         
         return self.repository.create_note(user_id, kb_id, doc_data)
     
+    def create_folder(
+        self,
+        user_id: str,
+        kb_id: str,
+        name: str,
+        parent_folder_id: Optional[str] = None
+    ) -> Document:
+        """创建文件夹。
+        
+        Args:
+            user_id: 用户ID
+            kb_id: 知识库ID
+            name: 文件夹名称
+            parent_folder_id: 父文件夹ID
+            
+        Returns:
+            创建的文件夹
+        """
+        # 验证知识库存在
+        kb = self.kb_repository.get_by_id(user_id, kb_id)
+        if not kb:
+            raise ValueError("知识库不存在")
+        
+        return self.repository.create_folder(user_id, kb_id, name, parent_folder_id)
+    
     def upload_document(
         self,
         user_id: str,

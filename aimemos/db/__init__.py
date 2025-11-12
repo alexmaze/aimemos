@@ -5,14 +5,12 @@ from .storage import (
     get_memo_repository,
     get_knowledge_base_repository,
     get_document_repository,
-    get_folder_repository,
 )
 from .repositories import (
     UserRepository,
     MemoRepository,
     KnowledgeBaseRepository,
     DocumentRepository,
-    FolderRepository,
 )
 
 __all__ = [
@@ -20,10 +18,8 @@ __all__ = [
     "get_memo_repository",
     "get_knowledge_base_repository",
     "get_document_repository",
-    "get_folder_repository",
     "UserRepository",
     "MemoRepository",
     "KnowledgeBaseRepository",
     "DocumentRepository",
-    "FolderRepository",
 ]

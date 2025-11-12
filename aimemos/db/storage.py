@@ -7,7 +7,6 @@ from .repositories import (
     MemoRepository,
     KnowledgeBaseRepository,
     DocumentRepository,
-    FolderRepository,
 )
 
 
@@ -16,7 +15,6 @@ _user_repository: Optional[UserRepository] = None
 _memo_repository: Optional[MemoRepository] = None
 _knowledge_base_repository: Optional[KnowledgeBaseRepository] = None
 _document_repository: Optional[DocumentRepository] = None
-_folder_repository: Optional[FolderRepository] = None
 
 
 def get_user_repository() -> UserRepository:
@@ -49,11 +47,3 @@ def get_document_repository() -> DocumentRepository:
     if _document_repository is None:
         _document_repository = DocumentRepository()
     return _document_repository
-
-
-def get_folder_repository() -> FolderRepository:
-    """获取或创建全局文件夹仓储实例。"""
-    global _folder_repository
-    if _folder_repository is None:
-        _folder_repository = FolderRepository()
-    return _folder_repository
