@@ -1,6 +1,7 @@
 """文档业务逻辑服务。"""
 
 import os
+import re
 import shutil
 from pathlib import Path
 from datetime import datetime
@@ -12,6 +13,23 @@ from ..schemas.document import DocumentCreate, DocumentUpdate
 from ..db import get_document_repository, get_knowledge_base_repository
 from ..config import get_settings
 from .file_handler import FileHandler
+
+
+def sanitize_path_component(component: str) -> str:
+    """Sanitize a path component to prevent path traversal attacks.
+    
+    Args:
+        component: The path component to sanitize
+        
+    Returns:
+        A safe path component
+    """
+    # Remove any path separators and parent directory references
+    safe_component = re.sub(r'[/\\]', '', component)
+    safe_component = re.sub(r'\.\.', '', safe_component)
+    # Remove any control characters
+    safe_component = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', safe_component)
+    return safe_component
 
 
 class DocumentService:
@@ -79,23 +97,35 @@ class DocumentService:
         if not self.file_handler.is_supported_format(file.filename):
             raise ValueError(f"不支持的文件格式: {file.filename}")
         
-        # 确定存储路径
-        storage_root = Path(self.settings.storage_root)
-        kb_dir = storage_root / user_id / kb_id
+        # 确定存储路径 - 使用安全的路径组件
+        storage_root = Path(self.settings.storage_root).resolve()
+        safe_user_id = sanitize_path_component(user_id)
+        safe_kb_id = sanitize_path_component(kb_id)
+        kb_dir = storage_root / safe_user_id / safe_kb_id
         
         # 如果有文件夹，按文件夹路径组织
         if folder_id:
-            # 这里简化处理，实际应该获取文件夹路径
-            # 可以在后续优化时添加
-            kb_dir = kb_dir / folder_id
+            safe_folder_id = sanitize_path_component(folder_id)
+            kb_dir = kb_dir / safe_folder_id
+        
+        # 确保目录在storage_root之内（防止路径遍历）
+        kb_dir = kb_dir.resolve()
+        if not str(kb_dir).startswith(str(storage_root)):
+            raise ValueError("无效的存储路径")
         
         kb_dir.mkdir(parents=True, exist_ok=True)
         
-        # 生成唯一的文件名（保留原始扩展名）
+        # 生成唯一的文件名（保留原始扩展名）- 清理文件名
         file_format = self.file_handler.get_file_format(file.filename)
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        safe_filename = f"{timestamp}_{file.filename}"
+        safe_original_name = sanitize_path_component(file.filename)
+        safe_filename = f"{timestamp}_{safe_original_name}"
         file_path = kb_dir / safe_filename
+        
+        # 再次验证最终路径在storage_root内
+        file_path = file_path.resolve()
+        if not str(file_path).startswith(str(storage_root)):
+            raise ValueError("无效的文件路径")
         
         # 保存文件
         try:
@@ -205,9 +235,11 @@ class DocumentService:
         
         # 如果是上传文档，删除源文件
         if doc.doc_type == 'uploaded' and doc.source_file_path:
-            storage_root = Path(self.settings.storage_root)
-            file_path = storage_root / doc.source_file_path
-            if file_path.exists():
+            storage_root = Path(self.settings.storage_root).resolve()
+            file_path = (storage_root / doc.source_file_path).resolve()
+            
+            # 确保文件路径在storage_root之内（防止路径遍历）
+            if str(file_path).startswith(str(storage_root)) and file_path.exists():
                 try:
                     os.remove(file_path)
                 except Exception:
