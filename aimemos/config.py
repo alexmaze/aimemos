@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     
     # 用户注册配置
-    enable_auto_registration: bool = True  # 是否开启自动注册功能
+    enable_registration: bool = True  # 是否允许注册新用户
     
     # 数据库配置
     # 相对路径是相对于应用启动时的当前工作目录

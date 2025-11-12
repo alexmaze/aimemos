@@ -17,7 +17,7 @@
 - 用户注册和登录认证系统
 - 基于 JWT 的安全认证
 - 用户数据隔离（每个用户只能访问自己的数据）
-- 可配置的自动注册功能
+- 可配置的用户注册功能
 - 创建、读取、更新和删除备忘录
 - 按标题、内容或标签搜索备忘录
 - 带自动文档的 RESTful API
@@ -87,7 +87,7 @@ uv run python -m aimemos.main
 
 #### 用户认证
 
-- `POST /api/v1/auth/register` - 用户注册（如果启用了自动注册）
+- `POST /api/v1/auth/register` - 用户注册（如果允许注册）
 - `POST /api/v1/auth/login` - 用户登录
 
 #### 备忘录（需要认证）
@@ -204,7 +204,7 @@ aimemos/
 - `SECRET_KEY`: JWT 签名密钥（生产环境必须修改）
 - `ALGORITHM`: JWT 签名算法（默认：HS256）
 - `ACCESS_TOKEN_EXPIRE_MINUTES`: 访问令牌过期时间（默认：30 分钟）
-- `ENABLE_AUTO_REGISTRATION`: 是否开启自动注册功能（默认：true）
+- `ENABLE_REGISTRATION`: 是否允许注册新用户（默认：true）
 - `DATABASE_URL`: 数据库文件路径（默认：sqlite:///./aimemos.db）
 
 ### 数据持久化
@@ -221,7 +221,7 @@ aimemos/
 1. **SECRET_KEY**: 生产环境中必须更改为强随机密钥
 2. **HTTPS**: 生产环境中应使用 HTTPS 来保护令牌传输
 3. **密码策略**: 建议设置最小密码长度为 6 个字符
-4. **自动注册**: 生产环境中可以关闭 `ENABLE_AUTO_REGISTRATION` 以控制用户访问
+4. **注册控制**: 生产环境中可以关闭 `ENABLE_REGISTRATION` 以控制用户访问
 5. **数据库备份**: 定期备份 SQLite 数据库文件以防数据丢失
 
 ## 许可证
