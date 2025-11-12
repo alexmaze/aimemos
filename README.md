@@ -17,7 +17,7 @@
 - 用户注册和登录认证系统
 - 基于 JWT 的安全认证
 - 用户数据隔离（每个用户只能访问自己的数据）
-- 可配置的自动注册功能
+- 可配置的用户注册功能
 - 创建、读取、更新和删除备忘录
 - 按标题、内容或标签搜索备忘录
 - 带自动文档的 RESTful API
@@ -87,7 +87,7 @@ uv run python -m aimemos.main
 
 #### 用户认证
 
-- `POST /api/v1/auth/register` - 用户注册（如果启用了自动注册）
+- `POST /api/v1/auth/register` - 用户注册（如果允许注册）
 - `POST /api/v1/auth/login` - 用户登录
 
 #### 备忘录（需要认证）
