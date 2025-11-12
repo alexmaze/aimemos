@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routes import router
+from .api.v1 import api_router
 
 
 def create_app() -> FastAPI:
@@ -27,19 +27,19 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # 包含路由
-    app.include_router(router, prefix=settings.api_prefix, tags=["memos"])
+    # 包含 API 路由
+    app.include_router(api_router, prefix=settings.api_prefix)
     
-    @app.get("/")
+    @app.get("/", summary="根端点")
     async def root():
-        """根端点。"""
+        """根端点，返回服务信息。"""
         return {
             "name": settings.app_name,
             "version": settings.app_version,
             "status": "running"
         }
     
-    @app.get("/health")
+    @app.get("/health", summary="健康检查")
     async def health():
         """健康检查端点。"""
         return {"status": "healthy"}
