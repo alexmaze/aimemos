@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # 用户注册配置
     enable_auto_registration: bool = True  # 是否开启自动注册功能
     
+    # 数据库配置
+    # 相对路径是相对于应用启动时的当前工作目录
+    database_url: str = "sqlite:///./aimemos.db"
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

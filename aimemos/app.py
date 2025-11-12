@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .api.v1 import api_router
+from .db.database import init_database
+from .db.storage import get_user_repository, get_memo_repository
 
 
 def create_app() -> FastAPI:
@@ -29,6 +31,15 @@ def create_app() -> FastAPI:
     
     # 包含 API 路由
     app.include_router(api_router, prefix=settings.api_prefix)
+    
+    @app.on_event("startup")
+    async def startup_event():
+        """应用启动时的初始化操作。"""
+        # 初始化数据库
+        init_database()
+        # 初始化仓储（这会触发表结构初始化）
+        get_user_repository()
+        get_memo_repository()
     
     @app.get("/", summary="根端点")
     async def root():

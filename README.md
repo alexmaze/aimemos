@@ -10,6 +10,7 @@
 - **PocketFlow**: AI 工作流框架
 - **Pydantic**: 数据验证和设置管理
 - **JWT**: JSON Web Token 认证
+- **SQLite**: 轻量级数据持久化存储
 
 ## 功能特性
 
@@ -20,7 +21,8 @@
 - 创建、读取、更新和删除备忘录
 - 按标题、内容或标签搜索备忘录
 - 带自动文档的 RESTful API
-- 内存存储（可轻松扩展为持久化存储）
+- SQLite 数据持久化存储（支持跨重启数据保留）
+- 自动数据库初始化和索引优化
 - 健康检查端点
 
 ## 安装
@@ -203,15 +205,16 @@ aimemos/
 - `ALGORITHM`: JWT 签名算法（默认：HS256）
 - `ACCESS_TOKEN_EXPIRE_MINUTES`: 访问令牌过期时间（默认：30 分钟）
 - `ENABLE_AUTO_REGISTRATION`: 是否开启自动注册功能（默认：true）
-- `HOST`: 服务器主机地址（默认：0.0.0.0）
-- `PORT`: 服务器端口（默认：8000）
-- `DEBUG`: 调试模式（默认：false）
-- `APP_NAME`: 应用名称
-- `APP_VERSION`: 应用版本
-- `SECRET_KEY`: JWT 签名密钥（生产环境必须修改）
-- `ALGORITHM`: JWT 签名算法（默认：HS256）
-- `ACCESS_TOKEN_EXPIRE_MINUTES`: 访问令牌过期时间（默认：30 分钟）
-- `ENABLE_AUTO_REGISTRATION`: 是否开启自动注册功能（默认：true）
+- `DATABASE_URL`: 数据库文件路径（默认：sqlite:///./aimemos.db）
+
+### 数据持久化
+
+系统使用 SQLite 数据库进行数据持久化：
+
+- **自动初始化**: 应用启动时自动创建数据库和表结构
+- **索引优化**: 自动创建索引以提高查询性能
+- **数据保留**: 服务器重启后数据不会丢失
+- **文件位置**: 默认数据库文件为 `aimemos.db`，可通过 `DATABASE_URL` 配置修改
 
 ### 安全注意事项
 
@@ -219,6 +222,7 @@ aimemos/
 2. **HTTPS**: 生产环境中应使用 HTTPS 来保护令牌传输
 3. **密码策略**: 建议设置最小密码长度为 6 个字符
 4. **自动注册**: 生产环境中可以关闭 `ENABLE_AUTO_REGISTRATION` 以控制用户访问
+5. **数据库备份**: 定期备份 SQLite 数据库文件以防数据丢失
 
 ## 许可证
 
