@@ -28,6 +28,24 @@ class UserRepository:
     def __init__(self):
         """初始化用户仓储。"""
         self.db = get_database()
+        self._init_table()
+    
+    def _init_table(self):
+        """初始化用户表结构。"""
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 创建用户表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id TEXT PRIMARY KEY,
+                    hashed_password TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1
+                )
+            """)
+            
+            conn.commit()
     
     def create(self, user_data: UserCreate) -> User:
         """创建新用户。"""

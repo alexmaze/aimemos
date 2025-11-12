@@ -30,9 +30,6 @@ class Database:
         # 确保数据库目录存在
         db_file = Path(self.db_path)
         db_file.parent.mkdir(parents=True, exist_ok=True)
-        
-        # 初始化数据库
-        self._init_database()
     
     @contextmanager
     def get_connection(self):
@@ -47,53 +44,6 @@ class Database:
             raise
         finally:
             conn.close()
-    
-    def _init_database(self):
-        """初始化数据库表结构和索引。"""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            
-            # 创建用户表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    user_id TEXT PRIMARY KEY,
-                    hashed_password TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    is_active INTEGER NOT NULL DEFAULT 1
-                )
-            """)
-            
-            # 创建备忘录表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS memos (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    tags TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users (user_id)
-                )
-            """)
-            
-            # 创建索引以提高查询性能
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_memos_user_id 
-                ON memos (user_id)
-            """)
-            
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_memos_created_at 
-                ON memos (created_at DESC)
-            """)
-            
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_memos_user_created 
-                ON memos (user_id, created_at DESC)
-            """)
-            
-            conn.commit()
 
 
 # 全局数据库实例
@@ -109,5 +59,9 @@ def get_database() -> Database:
 
 
 def init_database():
-    """初始化数据库（在应用启动时调用）。"""
+    """初始化数据库（在应用启动时调用）。
+    
+    注意：具体的表初始化由各个 Repository 类负责。
+    """
+    # 仅创建数据库实例，表初始化由各仓储类完成
     get_database()

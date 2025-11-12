@@ -16,6 +16,44 @@ class MemoRepository:
     def __init__(self):
         """初始化备忘录仓储。"""
         self.db = get_database()
+        self._init_table()
+    
+    def _init_table(self):
+        """初始化备忘录表结构和索引。"""
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 创建备忘录表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS memos (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    tags TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """)
+            
+            # 创建索引以提高查询性能
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_memos_user_id 
+                ON memos (user_id)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_memos_created_at 
+                ON memos (created_at DESC)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_memos_user_created 
+                ON memos (user_id, created_at DESC)
+            """)
+            
+            conn.commit()
     
     def create(self, user_id: str, memo_data: MemoCreate) -> Memo:
         """为指定用户创建新备忘录。"""
