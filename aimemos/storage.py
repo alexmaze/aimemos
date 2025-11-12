@@ -1,4 +1,4 @@
-"""Storage layer for AI Memos."""
+"""AI Memos 的存储层。"""
 
 from datetime import datetime
 from typing import Optional
@@ -8,14 +8,14 @@ from .models import Memo, MemoCreate, MemoUpdate
 
 
 class MemoStorage:
-    """In-memory storage for memos."""
+    """备忘录的内存存储。"""
     
     def __init__(self):
-        """Initialize the storage."""
+        """初始化存储。"""
         self._memos: dict[str, Memo] = {}
     
     def create_memo(self, memo_data: MemoCreate) -> Memo:
-        """Create a new memo."""
+        """创建新备忘录。"""
         memo_id = str(uuid4())
         now = datetime.utcnow()
         
@@ -32,11 +32,11 @@ class MemoStorage:
         return memo
     
     def get_memo(self, memo_id: str) -> Optional[Memo]:
-        """Get a memo by ID."""
+        """根据 ID 获取备忘录。"""
         return self._memos.get(memo_id)
     
     def list_memos(self, skip: int = 0, limit: int = 100) -> tuple[list[Memo], int]:
-        """List memos with pagination."""
+        """列出备忘录，支持分页。"""
         all_memos = sorted(
             self._memos.values(),
             key=lambda m: m.created_at,
@@ -47,7 +47,7 @@ class MemoStorage:
         return items, total
     
     def update_memo(self, memo_id: str, memo_data: MemoUpdate) -> Optional[Memo]:
-        """Update a memo."""
+        """更新备忘录。"""
         memo = self._memos.get(memo_id)
         if not memo:
             return None
@@ -64,14 +64,14 @@ class MemoStorage:
         return updated_memo
     
     def delete_memo(self, memo_id: str) -> bool:
-        """Delete a memo."""
+        """删除备忘录。"""
         if memo_id in self._memos:
             del self._memos[memo_id]
             return True
         return False
     
     def search_memos(self, query: str) -> list[Memo]:
-        """Search memos by query string."""
+        """根据查询字符串搜索备忘录。"""
         query_lower = query.lower()
         results = [
             memo for memo in self._memos.values()
@@ -82,12 +82,12 @@ class MemoStorage:
         return sorted(results, key=lambda m: m.created_at, reverse=True)
 
 
-# Global storage instance
+# 全局存储实例
 _storage: Optional[MemoStorage] = None
 
 
 def get_storage() -> MemoStorage:
-    """Get or create the global storage instance."""
+    """获取或创建全局存储实例。"""
     global _storage
     if _storage is None:
         _storage = MemoStorage()

@@ -1,4 +1,4 @@
-"""Data models for AI Memos."""
+"""AI Memos 的数据模型。"""
 
 from datetime import datetime
 from typing import Optional
@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class MemoBase(BaseModel):
-    """Base model for a memo."""
+    """备忘录的基础模型。"""
     
     title: str = Field(..., min_length=1, max_length=200)
     content: str = Field(..., min_length=1)
@@ -14,13 +14,13 @@ class MemoBase(BaseModel):
 
 
 class MemoCreate(MemoBase):
-    """Model for creating a new memo."""
+    """创建新备忘录的模型。"""
     
     pass
 
 
 class MemoUpdate(BaseModel):
-    """Model for updating a memo."""
+    """更新备忘录的模型。"""
     
     title: Optional[str] = Field(None, min_length=1, max_length=200)
     content: Optional[str] = Field(None, min_length=1)
@@ -28,7 +28,7 @@ class MemoUpdate(BaseModel):
 
 
 class Memo(MemoBase):
-    """Complete memo model with metadata."""
+    """完整的备忘录模型，包含元数据。"""
     
     id: str
     created_at: datetime
@@ -39,7 +39,7 @@ class Memo(MemoBase):
 
 
 class MemoList(BaseModel):
-    """List of memos with pagination info."""
+    """备忘录列表及分页信息。"""
     
     items: list[Memo]
     total: int

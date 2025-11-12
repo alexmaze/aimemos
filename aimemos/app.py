@@ -1,4 +1,4 @@
-"""FastAPI application for AI Memos."""
+"""AI Memos 的 FastAPI 应用。"""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,17 +8,17 @@ from .routes import router
 
 
 def create_app() -> FastAPI:
-    """Create and configure the FastAPI application."""
+    """创建并配置 FastAPI 应用。"""
     settings = get_settings()
     
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        description="AI-based personal knowledge base service",
+        description="基于 AI 的个人知识库服务",
         debug=settings.debug,
     )
     
-    # Add CORS middleware
+    # 添加 CORS 中间件
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -27,12 +27,12 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # Include routers
+    # 包含路由
     app.include_router(router, prefix=settings.api_prefix, tags=["memos"])
     
     @app.get("/")
     async def root():
-        """Root endpoint."""
+        """根端点。"""
         return {
             "name": settings.app_name,
             "version": settings.app_version,
@@ -41,7 +41,7 @@ def create_app() -> FastAPI:
     
     @app.get("/health")
     async def health():
-        """Health check endpoint."""
+        """健康检查端点。"""
         return {"status": "healthy"}
     
     return app

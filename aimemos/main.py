@@ -1,11 +1,11 @@
-"""Main entry point for AI Memos."""
+"""AI Memos 的主入口点。"""
 
 import uvicorn
 from .config import get_settings
 
 
 def main():
-    """Run the application."""
+    """运行应用。"""
     settings = get_settings()
     
     uvicorn.run(
