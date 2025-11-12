@@ -15,13 +15,13 @@ router = APIRouter()
 async def register(user_data: UserCreate):
     """用户注册。
     
-    如果开启了自动注册功能，用户可以通过此接口注册新账号。
+    如果允许注册，用户可以通过此接口注册新账号。
     注册成功后会自动返回访问令牌。
     """
     settings = get_settings()
     
-    # 检查是否开启自动注册
-    if not settings.enable_auto_registration:
+    # 检查是否允许注册
+    if not settings.enable_registration:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="注册功能已关闭"

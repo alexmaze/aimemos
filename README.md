@@ -204,7 +204,7 @@ aimemos/
 - `SECRET_KEY`: JWT 签名密钥（生产环境必须修改）
 - `ALGORITHM`: JWT 签名算法（默认：HS256）
 - `ACCESS_TOKEN_EXPIRE_MINUTES`: 访问令牌过期时间（默认：30 分钟）
-- `ENABLE_AUTO_REGISTRATION`: 是否开启自动注册功能（默认：true）
+- `ENABLE_REGISTRATION`: 是否允许注册新用户（默认：true）
 - `DATABASE_URL`: 数据库文件路径（默认：sqlite:///./aimemos.db）
 
 ### 数据持久化
@@ -221,7 +221,7 @@ aimemos/
 1. **SECRET_KEY**: 生产环境中必须更改为强随机密钥
 2. **HTTPS**: 生产环境中应使用 HTTPS 来保护令牌传输
 3. **密码策略**: 建议设置最小密码长度为 6 个字符
-4. **自动注册**: 生产环境中可以关闭 `ENABLE_AUTO_REGISTRATION` 以控制用户访问
+4. **注册控制**: 生产环境中可以关闭 `ENABLE_REGISTRATION` 以控制用户访问
 5. **数据库备份**: 定期备份 SQLite 数据库文件以防数据丢失
 
 ## 许可证
