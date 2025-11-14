@@ -2,23 +2,51 @@
 
 本目录包含 AIMemos 项目的 RAG (Retrieval-Augmented Generation，检索增强生成) 模块实现。
 
+## ⚡ 快速跳转
+
+- **集成使用**：参见 [INTEGRATION.md](INTEGRATION.md) - 与现有知识库系统集成
+- **独立使用**：本文档 - 独立运行 RAG 模块
+- **设计文档**：[DESIGN_RAG.md](DESIGN_RAG.md) - 完整技术设计
+
 ## 📁 文件结构
 
 ```
 rag/
 ├── DESIGN_RAG.md       # 详细设计文档（中文）
+├── INTEGRATION.md      # 知识库系统集成说明 ⭐ NEW
 ├── requirements.txt    # Python 依赖
 ├── embeddings.py       # m3e-base 嵌入模型封装
 ├── vector_store.py     # Milvus Lite 向量数据库操作
 ├── ingest.py          # 文档摄取与索引构建
 ├── llm_client.py      # OpenAI 兼容的 LLM 客户端
+├── integration.py     # 知识库系统集成模块 ⭐ NEW
 └── README.md          # 本文件
 
 pocketflow/
 └── rag_workflow.yaml  # PocketFlow 工作流定义
+
+aimemos/api/v1/endpoints/
+└── rag.py             # RAG API 端点 ⭐ NEW
 ```
 
-## 🚀 快速开始
+## 🔗 与知识库系统集成（推荐）
+
+如果您使用 AIMemos 应用，推荐使用集成版本：
+
+```bash
+# 启动应用
+uv run aimemos
+
+# 通过 API 使用 RAG 功能
+curl -X POST "http://localhost:8000/api/v1/rag/index" \
+  -H "Authorization: ******" \
+  -H "Content-Type: application/json" \
+  -d '{"kb_id":"your-kb-id"}'
+```
+
+详见 **[INTEGRATION.md](INTEGRATION.md)** 获取完整集成说明。
+
+## 🚀 独立使用（开发/测试）
 
 ### 1. 安装依赖
 
