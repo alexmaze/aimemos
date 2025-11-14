@@ -1,0 +1,240 @@
+# RAG Workflow Definition for PocketFlow
+# This workflow orchestrates document ingestion, indexing, and query services
+
+name: rag_workflow
+version: 1.0.0
+description: RAG (Retrieval-Augmented Generation) workflow for knowledge base management
+
+# Global configuration
+config:
+  # Milvus configuration
+  milvus:
+    uri: ./milvus_demo.db
+    collection_name: kb_documents
+  
+  # Embedding model configuration
+  embedding:
+    model_name: moka-ai/m3e-base
+    batch_size: 32
+  
+  # Chunking configuration
+  chunking:
+    max_tokens: 512
+    overlap_tokens: 128
+  
+  # LLM configuration
+  llm:
+    base_url: ${OPENAI_BASE_URL:-http://localhost:8000/v1}
+    api_key: ${OPENAI_API_KEY:-EMPTY}
+    model: default
+    temperature: 0.7
+
+# Task definitions
+tasks:
+  # Task 1: Ingest documents from a directory
+  ingest_documents:
+    description: Ingest documents from local directory into vector store
+    entrypoint: rag.ingest:main
+    params:
+      data_dir: ./data/kb
+      kb_id: default
+      milvus_uri: ${config.milvus.uri}
+      collection_name: ${config.milvus.collection_name}
+      max_tokens: ${config.chunking.max_tokens}
+      overlap_tokens: ${config.chunking.overlap_tokens}
+      batch_size: ${config.embedding.batch_size}
+      model_name: ${config.embedding.model_name}
+    dependencies: []
+    retry:
+      max_attempts: 3
+      backoff: exponential
+    timeout: 3600  # 1 hour
+  
+  # Task 2: Rebuild index from scratch
+  rebuild_index:
+    description: Drop existing collection and rebuild index from scratch
+    entrypoint: rag.ingest:main
+    params:
+      data_dir: ./data/kb
+      kb_id: default
+      milvus_uri: ${config.milvus.uri}
+      collection_name: ${config.milvus.collection_name}
+      max_tokens: ${config.chunking.max_tokens}
+      overlap_tokens: ${config.chunking.overlap_tokens}
+      batch_size: ${config.embedding.batch_size}
+      model_name: ${config.embedding.model_name}
+      recreate_index: true
+    dependencies: []
+    retry:
+      max_attempts: 2
+      backoff: exponential
+    timeout: 3600  # 1 hour
+  
+  # Task 3: Test embeddings generation
+  test_embeddings:
+    description: Test embedding generation with sample texts
+    entrypoint: rag.embeddings:main
+    params:
+      model_name: ${config.embedding.model_name}
+    dependencies: []
+    timeout: 300  # 5 minutes
+  
+  # Task 4: Test LLM connection
+  test_llm:
+    description: Test connection to local LLM endpoint
+    entrypoint: rag.llm_client:main
+    params:
+      base_url: ${config.llm.base_url}
+      api_key: ${config.llm.api_key}
+      prompt: 你好，请介绍一下你自己
+      system: 你是一个专业的AI助手
+    dependencies: []
+    timeout: 60  # 1 minute
+  
+  # Task 5: Query service (placeholder for future implementation)
+  serve_query:
+    description: Start RAG query service
+    # Note: This is a placeholder. Actual implementation should create a query endpoint
+    # that combines vector search with LLM generation
+    entrypoint: rag.query_service:serve
+    params:
+      host: 0.0.0.0
+      port: 8001
+      milvus_uri: ${config.milvus.uri}
+      collection_name: ${config.milvus.collection_name}
+      embedding_model: ${config.embedding.model_name}
+      llm_base_url: ${config.llm.base_url}
+      llm_api_key: ${config.llm.api_key}
+    dependencies:
+      - ingest_documents
+    timeout: null  # Long-running service
+  
+  # Task 6: Batch query testing (placeholder)
+  batch_query:
+    description: Run batch queries for testing RAG performance
+    entrypoint: rag.batch_query:main
+    params:
+      queries_file: ./data/test_queries.txt
+      output_file: ./output/query_results.json
+      top_k: 5
+      milvus_uri: ${config.milvus.uri}
+      collection_name: ${config.milvus.collection_name}
+    dependencies:
+      - ingest_documents
+    timeout: 1800  # 30 minutes
+
+# Workflow schedules (optional)
+schedules:
+  # Daily reindex at 2 AM
+  daily_reindex:
+    task: rebuild_index
+    cron: "0 2 * * *"
+    enabled: false
+  
+  # Incremental ingest every 6 hours
+  incremental_ingest:
+    task: ingest_documents
+    cron: "0 */6 * * *"
+    enabled: false
+
+# Workflow pipelines
+pipelines:
+  # Pipeline 1: Full setup pipeline
+  full_setup:
+    description: Complete RAG setup from scratch
+    tasks:
+      - test_embeddings
+      - test_llm
+      - rebuild_index
+    sequential: true
+  
+  # Pipeline 2: Incremental update
+  incremental_update:
+    description: Add new documents to existing index
+    tasks:
+      - ingest_documents
+    sequential: true
+  
+  # Pipeline 3: Testing pipeline
+  test_all:
+    description: Test all components
+    tasks:
+      - test_embeddings
+      - test_llm
+    sequential: false  # Run in parallel
+
+# Monitoring and logging
+monitoring:
+  enabled: true
+  metrics:
+    - task_duration
+    - task_success_rate
+    - documents_processed
+    - embeddings_generated
+  
+  alerts:
+    - name: task_failure
+      condition: task.status == 'failed'
+      action: log
+    
+    - name: slow_ingestion
+      condition: task.duration > 3600
+      action: log
+
+# Resource limits
+resources:
+  default:
+    cpu: 2
+    memory: 8GB
+    gpu: 0
+  
+  ingest_documents:
+    cpu: 4
+    memory: 16GB
+    gpu: 1  # Use GPU for embedding generation if available
+  
+  rebuild_index:
+    cpu: 4
+    memory: 16GB
+    gpu: 1
+
+# Error handling
+error_handling:
+  default_retry_policy:
+    max_attempts: 3
+    backoff: exponential
+    backoff_multiplier: 2
+    initial_delay: 1
+  
+  on_failure:
+    - log_error
+    - notify_admin  # Placeholder for notification system
+
+# Notes and documentation
+notes: |
+  RAG Workflow Usage Instructions:
+  
+  1. Initial Setup:
+     - Ensure Milvus Lite is accessible (will be created automatically)
+     - Download m3e-base model (first run will download)
+     - Prepare documents in ./data/kb directory
+     - Start local LLM server with OpenAI-compatible API
+  
+  2. Running Workflows:
+     - Full setup: pocketflow run rag_workflow --pipeline full_setup
+     - Ingest docs: pocketflow run rag_workflow --task ingest_documents
+     - Rebuild index: pocketflow run rag_workflow --task rebuild_index
+     - Test embeddings: pocketflow run rag_workflow --task test_embeddings
+     - Test LLM: pocketflow run rag_workflow --task test_llm
+  
+  3. Configuration:
+     - Set environment variables:
+       export OPENAI_BASE_URL='http://localhost:8000/v1'
+       export OPENAI_API_KEY='your-key-if-needed'
+     - Modify config section above for custom settings
+  
+  4. Future Enhancements:
+     - Implement serve_query task for real-time RAG queries
+     - Implement batch_query for performance testing
+     - Add reranking and hybrid search support
+     - Integrate with existing AIMemos API
