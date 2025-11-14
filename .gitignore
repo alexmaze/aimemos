@@ -224,4 +224,6 @@ milvus_demo.db-*
 huggingface/
 transformers_cache/
 # Test data directory (users should create their own)
-data/kb/
+data/kb/*
+!data/kb/.gitkeep
+!data/kb/README.md
