@@ -73,36 +73,68 @@ class RAGSearchResponse(BaseModel):
     total: int = Field(..., description="结果数量")
 
 
-@router.post("/index", response_model=RAGIndexResponse, summary="索引知识库")
+@router.post("/index", response_model=RAGIndexResponse, summary="批量索引知识库（后台异步）")
 async def index_knowledge_base(
     request: RAGIndexRequest,
     current_user: str = Depends(get_current_user)
 ):
     """
-    索引指定知识库的所有文档到向量数据库。
+    批量索引指定知识库的所有文档到向量数据库（异步执行）。
     
-    将知识库中的所有文档进行分块、嵌入并存储到向量数据库中，
-    以支持语义搜索和 RAG 查询。
+    将知识库中的所有文档提交到异步索引队列，每个文档都会创建对应的
+    rag_index_task 记录来跟踪索引状态。
+    
+    此接口立即返回，索引在后台执行。可通过文档 API 查看每个文档的索引状态。
     
     需要认证。只能索引当前用户的知识库。
     """
-    rag = get_rag_integration()
+    from ....services.rag_sync_hook import get_rag_sync_hook
+    from ....services.document import get_document_service
     
     try:
-        stats = rag.index_knowledge_base(
-            user_id=current_user,
+        # 获取知识库下的所有文档
+        doc_service = get_document_service()
+        documents = doc_service.list_documents(current_user, kb_id=request.kb_id)
+        
+        if not documents:
+            raise HTTPException(status_code=404, detail="知识库未找到或没有文档")
+        
+        # 获取知识库信息
+        kb_service = get_knowledge_base_service()
+        kb = kb_service.get_knowledge_base(current_user, request.kb_id)
+        if not kb:
+            raise HTTPException(status_code=404, detail="知识库未找到")
+        
+        # 提交每个文档到异步索引队列
+        rag_hook = get_rag_sync_hook()
+        indexed_count = 0
+        skipped_count = 0
+        
+        for doc in documents:
+            # 跳过文件夹
+            if doc.doc_type == 'folder':
+                skipped_count += 1
+                continue
+            
+            # 触发异步索引
+            rag_hook.on_document_created(current_user, doc)
+            indexed_count += 1
+        
+        return RAGIndexResponse(
             kb_id=request.kb_id,
-            max_tokens=request.max_tokens,
-            overlap_tokens=request.overlap_tokens,
-            show_progress=False  # API 调用不显示进度条
+            kb_name=kb.name,
+            total_documents=len(documents),
+            indexed_documents=indexed_count,
+            skipped_documents=skipped_count,
+            total_chunks=0  # 异步执行，无法立即获得总块数
         )
         
-        return RAGIndexResponse(**stats)
-        
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"索引失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"提交索引任务失败: {str(e)}")
 
 
 @router.post("/search", response_model=RAGSearchResponse, summary="RAG 语义搜索")
@@ -170,12 +202,15 @@ async def delete_knowledge_base_index(
     """
     删除指定知识库的向量索引。
     
-    从向量数据库中删除该知识库的所有文档向量。
+    从向量数据库中删除该知识库的所有文档向量，并删除所有相关的 rag_index_task 记录。
     知识库本身和文档不会被删除，只是移除 RAG 索引。
     
     需要认证。只能删除当前用户的知识库索引。
     """
+    from ....db.repositories.rag_index_task import RAGIndexTaskRepository
+    
     rag = get_rag_integration()
+    task_repo = RAGIndexTaskRepository()
     
     try:
         # 验证知识库权限
@@ -190,6 +225,9 @@ async def delete_knowledge_base_index(
             kb_id=kb_id
         )
         
+        # 删除该知识库下所有文档的索引任务记录
+        task_repo.delete_by_knowledge_base_id(kb_id, current_user)
+        
         return {"deleted": count}
         
     except HTTPException:
@@ -198,7 +236,7 @@ async def delete_knowledge_base_index(
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
 
 
-@router.post("/reindex/document/{doc_id}", response_model=dict, summary="重新索引文档")
+@router.post("/reindex/document/{doc_id}", response_model=dict, summary="重新索引文档（后台异步）")
 async def reindex_document(
     doc_id: str,
     max_tokens: int = Query(512, ge=128, le=2048, description="每块最大 token 数"),
@@ -206,33 +244,41 @@ async def reindex_document(
     current_user: str = Depends(get_current_user)
 ):
     """
-    重新索引单个文档。
+    重新索引单个文档（异步执行）。
     
     删除文档的旧向量并重新生成新的向量索引。
     适用于文档内容更新后需要刷新 RAG 索引的情况。
     
+    此接口立即返回，索引在后台执行。可通过文档 API 查看索引状态。
+    
     需要认证。只能重新索引当前用户的文档。
     """
-    rag = get_rag_integration()
+    from ....services.rag_sync_hook import get_rag_sync_hook
+    from ....services.document import get_document_service
     
     try:
-        chunks_count = rag.reindex_document(
-            user_id=current_user,
-            doc_id=doc_id,
-            max_tokens=max_tokens,
-            overlap_tokens=overlap_tokens
-        )
+        # 获取文档
+        doc_service = get_document_service()
+        doc = doc_service.get_document(current_user, doc_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="文档未找到")
+        
+        # 触发异步重新索引
+        rag_hook = get_rag_sync_hook()
+        rag_hook.on_document_updated(current_user, doc)
         
         return {
             "doc_id": doc_id,
-            "chunks_count": chunks_count,
-            "message": f"成功重新索引文档，生成 {chunks_count} 个文本块"
+            "message": "重新索引任务已提交，正在后台执行",
+            "status": "indexing"
         }
         
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"重新索引失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"提交重新索引任务失败: {str(e)}")
 
 
 @router.delete("/index/document/{doc_id}", status_code=204, summary="删除文档索引")
@@ -243,18 +289,25 @@ async def delete_document_index(
     """
     删除指定文档的向量索引。
     
-    从向量数据库中删除该文档的所有向量。
+    从向量数据库中删除该文档的所有向量，并删除相关的 rag_index_task 记录。
     文档本身不会被删除，只是移除 RAG 索引。
     
     需要认证。只能删除当前用户的文档索引。
     """
+    from ....db.repositories.rag_index_task import RAGIndexTaskRepository
+    
     rag = get_rag_integration()
+    task_repo = RAGIndexTaskRepository()
     
     try:
+        # 删除向量
         count = rag.delete_document_vectors(
             user_id=current_user,
             doc_id=doc_id
         )
+        
+        # 删除索引任务记录
+        task_repo.delete_by_document_id(doc_id, current_user)
         
         return {"deleted": count}
         

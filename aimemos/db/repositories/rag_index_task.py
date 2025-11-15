@@ -277,6 +277,25 @@ class RAGIndexTaskRepository:
             conn.commit()
             return cursor.rowcount > 0
     
+    def delete_by_knowledge_base_id(self, knowledge_base_id: str, user_id: str) -> int:
+        """删除知识库下所有文档的 RAG 索引任务。
+        
+        Args:
+            knowledge_base_id: 知识库ID
+            user_id: 用户ID
+            
+        Returns:
+            删除的任务数量
+        """
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM rag_index_tasks 
+                WHERE knowledge_base_id = ? AND user_id = ?
+            """, (knowledge_base_id, user_id))
+            conn.commit()
+            return cursor.rowcount
+    
     def check_timeout(
         self,
         task_id: str,
