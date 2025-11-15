@@ -7,7 +7,9 @@ RAG 自动同步钩子
 
 import logging
 from typing import Optional
+from datetime import datetime
 from ..models.document import Document
+from ..db import get_document_repository
 
 logger = logging.getLogger(__name__)
 
@@ -55,16 +57,46 @@ class RAGSyncHook:
         if document.doc_type == 'folder':
             return
         
+        # 获取 repository 用于更新状态
+        doc_repo = get_document_repository()
+        
         try:
+            # 更新状态为 indexing
+            started_at = datetime.utcnow()
+            doc_repo.update_rag_index_status(
+                user_id=user_id,
+                doc_id=document.id,
+                status='indexing',
+                started_at=started_at
+            )
+            
             rag = self._get_rag_integration()
             if rag:
                 chunks_count = rag.index_document(user_id, document)
+                
+                # 更新状态为 completed
+                completed_at = datetime.utcnow()
+                doc_repo.update_rag_index_status(
+                    user_id=user_id,
+                    doc_id=document.id,
+                    status='completed',
+                    started_at=started_at,
+                    completed_at=completed_at
+                )
+                
                 if chunks_count > 0:
                     logger.info(
                         f"Auto-indexed document {document.id} "
                         f"({document.name}): {chunks_count} chunks"
                     )
         except Exception as e:
+            # 更新状态为 failed
+            doc_repo.update_rag_index_status(
+                user_id=user_id,
+                doc_id=document.id,
+                status='failed',
+                error=str(e)
+            )
             logger.error(f"Failed to auto-index document {document.id}: {e}")
     
     def on_document_updated(self, user_id: str, document: Document) -> None:
@@ -82,16 +114,46 @@ class RAGSyncHook:
         if document.doc_type == 'folder':
             return
         
+        # 获取 repository 用于更新状态
+        doc_repo = get_document_repository()
+        
         try:
+            # 更新状态为 indexing
+            started_at = datetime.utcnow()
+            doc_repo.update_rag_index_status(
+                user_id=user_id,
+                doc_id=document.id,
+                status='indexing',
+                started_at=started_at
+            )
+            
             rag = self._get_rag_integration()
             if rag:
                 chunks_count = rag.reindex_document(user_id, document.id)
+                
+                # 更新状态为 completed
+                completed_at = datetime.utcnow()
+                doc_repo.update_rag_index_status(
+                    user_id=user_id,
+                    doc_id=document.id,
+                    status='completed',
+                    started_at=started_at,
+                    completed_at=completed_at
+                )
+                
                 if chunks_count > 0:
                     logger.info(
                         f"Auto-reindexed document {document.id} "
                         f"({document.name}): {chunks_count} chunks"
                     )
         except Exception as e:
+            # 更新状态为 failed
+            doc_repo.update_rag_index_status(
+                user_id=user_id,
+                doc_id=document.id,
+                status='failed',
+                error=str(e)
+            )
             logger.error(f"Failed to auto-reindex document {document.id}: {e}")
     
     def on_document_deleted(self, user_id: str, doc_id: str) -> None:

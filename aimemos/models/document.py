@@ -33,6 +33,12 @@ class Document(BaseModel):
     source_file_created_at: Optional[datetime] = None
     source_file_modified_at: Optional[datetime] = None
     
+    # RAG 索引状态字段
+    rag_index_status: Optional[str] = None  # 'pending', 'indexing', 'completed', 'failed', 'timeout'
+    rag_index_started_at: Optional[datetime] = None  # 索引开始时间
+    rag_index_completed_at: Optional[datetime] = None  # 索引完成时间
+    rag_index_error: Optional[str] = None  # 错误信息（如果失败）
+    
     created_at: datetime
     updated_at: datetime
     
