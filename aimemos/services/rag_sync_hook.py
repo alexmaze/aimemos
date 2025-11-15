@@ -52,11 +52,6 @@ class RAGSyncHook:
         # 活跃任务追踪：{task_uuid: (Future, doc_id, user_id)}
         self._active_tasks = {}
         self._tasks_lock = threading.Lock()
-        
-        # 文档级锁：{(user_id, doc_id): threading.Lock}
-        # 确保同一文档同时只有一个索引任务执行
-        self._doc_locks = {}
-        self._doc_locks_lock = threading.Lock()
     
     def _get_rag_integration(self):
         """延迟加载 RAG 集成实例（避免循环导入）"""
@@ -74,50 +69,7 @@ class RAGSyncHook:
                 self._enabled = False
         return self._rag_integration
     
-    def _get_doc_lock(self, user_id: str, doc_id: str) -> threading.Lock:
-        """获取文档级锁
-        
-        Args:
-            user_id: 用户 ID
-            doc_id: 文档 ID
-        
-        Returns:
-            文档级锁对象
-        """
-        key = (user_id, doc_id)
-        with self._doc_locks_lock:
-            if key not in self._doc_locks:
-                self._doc_locks[key] = threading.Lock()
-            return self._doc_locks[key]
-    
-    def _cancel_existing_task(self, doc_id: str, user_id: str) -> None:
-        """取消文档的现有索引任务（如果存在）
-        
-        注意：此方法只标记任务为已取消，不能真正终止正在运行的线程。
-        实际的并发控制由文档级锁（_doc_locks）保证。
-        
-        Args:
-            doc_id: 文档 ID
-            user_id: 用户 ID
-        """
-        with self._tasks_lock:
-            # 查找并取消该文档的现有任务
-            tasks_to_cancel = []
-            for task_uuid, (future, task_doc_id, task_user_id) in list(self._active_tasks.items()):
-                if task_doc_id == doc_id and task_user_id == user_id:
-                    tasks_to_cancel.append(task_uuid)
-            
-            for task_uuid in tasks_to_cancel:
-                future, _, _ = self._active_tasks[task_uuid]
-                # 尝试取消任务
-                if future.cancel():
-                    logger.info(f"Cancelled previous indexing task for document {doc_id}")
-                else:
-                    # 任务已经在执行中，无法取消
-                    # 但文档级锁会确保新任务等待旧任务完成
-                    logger.info(f"Previous task for document {doc_id} is running, new task will wait")
-                # 从活跃任务中移除
-                del self._active_tasks[task_uuid]
+
     
     def _index_document_async(
         self,
@@ -128,7 +80,8 @@ class RAGSyncHook:
     ) -> None:
         """异步索引文档（在工作线程中执行）
         
-        使用文档级锁确保同一文档同时只有一个索引任务执行。
+        使用 UUID 验证 + Milvus 删除-重建机制确保数据一致性。
+        即使多个任务并发执行，最终也只有最新任务的结果会被保留。
         
         Args:
             task_uuid: 任务唯一标识符
@@ -139,72 +92,74 @@ class RAGSyncHook:
         doc_repo = get_document_repository()
         thread_id = threading.get_ident()
         
-        # 获取文档级锁
-        doc_lock = self._get_doc_lock(user_id, document.id)
+        try:
+            # 1. 验证任务是否仍然有效（通过 task_uuid 比对）
+            doc = doc_repo.get_by_id(user_id, document.id)
+            if not doc or doc.rag_index_task_uuid != task_uuid:
+                logger.info(f"Task {task_uuid} for document {document.id} is stale, skipping")
+                return
+            
+            rag = self._get_rag_integration()
+            if not rag:
+                raise Exception("RAG integration not available")
+            
+            # 2. 删除该文档的所有旧向量（幂等操作）
+            # 即使多个任务并发执行，删除操作也是安全的
+            rag.delete_document_vectors(user_id, document.id)
+            
+            # 3. 生成新向量并插入
+            # 获取最新文档内容
+            doc = doc_repo.get_by_id(user_id, document.id)
+            if not doc or doc.rag_index_task_uuid != task_uuid:
+                logger.info(f"Task {task_uuid} for document {document.id} was cancelled before indexing")
+                return
+            
+            chunks_count = rag.index_document(user_id, doc)
+            
+            # 4. 再次验证任务仍然有效，只有最新任务才更新状态
+            doc = doc_repo.get_by_id(user_id, document.id)
+            if not doc or doc.rag_index_task_uuid != task_uuid:
+                logger.info(f"Task {task_uuid} for document {document.id} was superseded, not updating status")
+                return
+            
+            # 5. 更新状态为 completed
+            completed_at = datetime.utcnow()
+            doc_repo.update_rag_index_status(
+                user_id=user_id,
+                doc_id=document.id,
+                status='completed',
+                completed_at=completed_at
+            )
+            
+            if chunks_count > 0:
+                action = "reindexed" if is_reindex else "indexed"
+                logger.info(
+                    f"Auto-{action} document {document.id} "
+                    f"({document.name}): {chunks_count} chunks"
+                )
         
-        # 尝试获取锁（如果有其他线程正在处理该文档，会在此等待）
-        with doc_lock:
-            try:
-                # 验证任务是否仍然有效（通过 task_uuid 比对）
-                doc = doc_repo.get_by_id(user_id, document.id)
-                if not doc or doc.rag_index_task_uuid != task_uuid:
-                    logger.info(f"Task {task_uuid} for document {document.id} is stale, skipping")
-                    return
-                
-                rag = self._get_rag_integration()
-                if not rag:
-                    raise Exception("RAG integration not available")
-                
-                # 执行索引
-                if is_reindex:
-                    chunks_count = rag.reindex_document(user_id, document.id)
-                else:
-                    chunks_count = rag.index_document(user_id, document)
-                
-                # 再次验证任务仍然有效
-                doc = doc_repo.get_by_id(user_id, document.id)
-                if not doc or doc.rag_index_task_uuid != task_uuid:
-                    logger.info(f"Task {task_uuid} for document {document.id} was cancelled during execution")
-                    return
-                
-                # 更新状态为 completed
-                completed_at = datetime.utcnow()
-                doc_repo.update_rag_index_status(
-                    user_id=user_id,
-                    doc_id=document.id,
-                    status='completed',
-                    completed_at=completed_at
-                )
-                
-                if chunks_count > 0:
-                    action = "reindexed" if is_reindex else "indexed"
-                    logger.info(
-                        f"Auto-{action} document {document.id} "
-                        f"({document.name}): {chunks_count} chunks"
-                    )
+        except Exception as e:
+            # 验证任务仍然有效
+            doc = doc_repo.get_by_id(user_id, document.id)
+            if not doc or doc.rag_index_task_uuid != task_uuid:
+                logger.info(f"Task {task_uuid} for document {document.id} was cancelled, not updating error status")
+                return
             
-            except Exception as e:
-                # 验证任务仍然有效
-                doc = doc_repo.get_by_id(user_id, document.id)
-                if not doc or doc.rag_index_task_uuid != task_uuid:
-                    logger.info(f"Task {task_uuid} for document {document.id} was cancelled, not updating error status")
-                    return
-                
-                # 更新状态为 failed
-                doc_repo.update_rag_index_status(
-                    user_id=user_id,
-                    doc_id=document.id,
-                    status='failed',
-                    error=str(e)
-                )
-                action = "reindex" if is_reindex else "index"
-                logger.error(f"Failed to auto-{action} document {document.id}: {e}")
-            
-            finally:
-                # 从活跃任务中移除
-                with self._tasks_lock:
-                    if task_uuid in self._active_tasks:
-                        del self._active_tasks[task_uuid]
+            # 更新状态为 failed
+            doc_repo.update_rag_index_status(
+                user_id=user_id,
+                doc_id=document.id,
+                status='failed',
+                error=str(e)
+            )
+            action = "reindex" if is_reindex else "index"
+            logger.error(f"Failed to auto-{action} document {document.id}: {e}")
+        
+        finally:
+            # 从活跃任务中移除
+            with self._tasks_lock:
+                if task_uuid in self._active_tasks:
+                    del self._active_tasks[task_uuid]
     
     def _submit_indexing_task(
         self,
@@ -226,9 +181,6 @@ class RAGSyncHook:
         if document.doc_type == 'folder':
             return
         
-        # 取消该文档的现有任务
-        self._cancel_existing_task(document.id, user_id)
-        
         # 生成任务 UUID
         task_uuid = str(uuid.uuid4())
         
@@ -236,6 +188,7 @@ class RAGSyncHook:
         doc_repo = get_document_repository()
         
         # 更新状态为 indexing（先记录到数据库）
+        # 新的 task_uuid 会自动使旧任务失效
         started_at = datetime.utcnow()
         doc_repo.update_rag_index_status(
             user_id=user_id,
@@ -258,21 +211,6 @@ class RAGSyncHook:
         # 记录活跃任务
         with self._tasks_lock:
             self._active_tasks[task_uuid] = (future, document.id, user_id)
-        
-        # 添加完成回调以更新线程ID
-        def update_thread_id(f):
-            try:
-                thread_id = threading.get_ident()
-                doc_repo.update_rag_index_status(
-                    user_id=user_id,
-                    doc_id=document.id,
-                    status='indexing',  # 保持状态不变
-                    thread_id=thread_id
-                )
-            except Exception as e:
-                logger.warning(f"Failed to update thread_id for task {task_uuid}: {e}")
-        
-        future.add_done_callback(lambda _: None)  # 回调已在 _index_document_async 中处理
     
     def on_document_created(self, user_id: str, document: Document) -> None:
         """
@@ -304,9 +242,6 @@ class RAGSyncHook:
         """
         if not self._enabled:
             return
-        
-        # 取消该文档的现有索引任务
-        self._cancel_existing_task(doc_id, user_id)
         
         try:
             rag = self._get_rag_integration()

@@ -2,7 +2,7 @@
 
 ## 概述
 
-RAG 模块支持异步索引，通过线程池管理索引任务，提供高效的并发控制和完善的任务管理机制。
+RAG 模块支持异步索引，通过线程池管理索引任务，提供高效的并发控制和完善的任务管理机制。采用**简洁优雅**的 UUID 验证 + Milvus 删除-重建机制，确保数据一致性。
 
 ## 核心特性
 
@@ -25,71 +25,69 @@ RAG 模块支持异步索引，通过线程池管理索引任务，提供高效�
 }
 ```
 
-### 3. 防止重复执行
+### 3. 防止数据污染 - 简洁优雅的方案
 
-**文档级锁机制**：确保同一文档同时只有一个索引任务实际执行
+**核心机制**：UUID 验证 + Milvus 删除-重建
 
-- **锁粒度**：为每个 `(user_id, doc_id)` 维护独立的锁对象
-- **并发控制**：不同文档的索引可以并发执行，但同一文档会串行化
-- **自动等待**：如果新任务提交时旧任务仍在执行，新任务会等待旧任务完成后再执行
-- **UUID 验证**：任务获得锁后，通过 `task_uuid` 检查是否仍然有效，无效任务直接退出
+- **UUID 验证**：只有最新任务能更新文档状态
+- **删除-重建**：每次索引前先删除旧向量，确保数据幂等
+- **无需锁**：允许多个任务并发执行，最终结果仍然正确
 
 **工作原理**：
 ```python
-# 线程池中的工作线程
 def _index_document_async(task_uuid, user_id, document):
-    doc_lock = get_doc_lock(user_id, document.id)
+    # 1. 验证是否是最新任务
+    doc = doc_repo.get_by_id(user_id, document.id)
+    if doc.rag_index_task_uuid != task_uuid:
+        return  # 不是最新任务，退出
     
-    # 获取锁（如果其他线程正在处理该文档，会在此等待）
-    with doc_lock:
-        # 验证任务是否仍然有效
-        if doc.rag_index_task_uuid != task_uuid:
-            return  # 任务已被新任务替代，退出
-        
-        # 执行索引...
+    # 2. 删除该文档的所有旧向量（幂等操作）
+    rag.delete_document_vectors(user_id, document.id)
+    
+    # 3. 生成新向量并插入
+    chunks = chunk_document(document)
+    vectors = embed_chunks(chunks)
+    rag.insert_vectors(vectors)
+    
+    # 4. 再次验证，只有最新任务才更新状态
+    doc = doc_repo.get_by_id(user_id, document.id)
+    if doc.rag_index_task_uuid != task_uuid:
+        return  # 已被更新的任务替代
+    
+    # 5. 更新为完成状态
+    update_status('completed')
 ```
+
+**为什么简单却安全**：
+- ✅ 即使两个线程并发执行，都会先删除再插入，最终只有一份向量数据
+- ✅ UUID 验证确保只有最新任务更新状态
+- ✅ 没有锁竞争，代码更简洁
+- ✅ Milvus 的 delete 和 insert 本身是原子操作
+- ✅ 资源浪费最小化（旧任务通过 UUID 验证快速退出）
 
 **场景示例**：
 ```
-时间线：
-T1: 用户创建文档 → 任务A提交 → 线程1开始执行任务A（获得锁）
-T2: 用户更新文档 → 任务A标记为取消 → 任务B提交 → 线程2等待锁
-T3: 线程1完成任务A → 释放锁
-T4: 线程2获得锁 → 验证task_uuid → 执行任务B
-```
+场景 1：快速连续更新
+T1: 创建文档 → 任务A提交（uuid=A）→ 线程1开始执行
+T2: 更新文档 → 任务B提交（uuid=B）→ 线程2开始执行
+T3: 线程1检查uuid → A≠B → 退出（不浪费资源）
+T4: 线程2删除旧向量 → 生成新向量 → 插入 → 完成
 
-✅ **保证**：同一文档不会有两个线程同时执行索引操作
+结果：✅ 最终向量数据对应最新版本B，状态正确
+
+场景 2：并发创建不同文档
+T1: 创建doc1 → 线程1执行
+T2: 创建doc2 → 线程2执行
+T3: 创建doc3 → 线程3执行
+
+结果：✅ 三个文档并发索引，充分利用线程池
+```
 
 ### 4. 超时控制
 
 - 默认超时时间：300 秒（5 分钟）
 - 在文档列表/详情查询时自动检查超时任务
 - 超时任务自动标记为 `timeout` 状态
-
-### 5. 安全的任务终止
-
-**问题**：线程 ID 可能被复用，直接根据线程 ID 终止可能误杀其他任务
-
-**解决方案**：使用 `task_uuid` 进行任务验证
-
-```python
-# 在任务执行的关键节点验证 task_uuid
-def _index_document_async(task_uuid, user_id, document):
-    # 1. 开始前验证
-    doc = doc_repo.get_by_id(user_id, document.id)
-    if doc.rag_index_task_uuid != task_uuid:
-        return  # 任务已被取消，退出
-    
-    # 2. 执行索引...
-    
-    # 3. 完成前再次验证
-    doc = doc_repo.get_by_id(user_id, document.id)
-    if doc.rag_index_task_uuid != task_uuid:
-        return  # 避免更新过期状态
-    
-    # 4. 更新为完成状态
-    update_status('completed')
-```
 
 ## 数据库字段
 
@@ -115,15 +113,13 @@ def _index_document_async(task_uuid, user_id, document):
    ↓
 3. 触发 RAGSyncHook.on_document_created()
    ↓
-4. 取消该文档的现有任务（如果有）
+4. 生成 task_uuid
    ↓
-5. 生成 task_uuid
+5. 更新数据库：status='indexing', task_uuid=xxx, started_at=now
    ↓
-6. 更新数据库：status='indexing', task_uuid=xxx, started_at=now
+6. 提交任务到线程池
    ↓
-7. 提交任务到线程池
-   ↓
-8. 立即返回响应给用户（不等待索引完成）
+7. 立即返回响应给用户（不等待索引完成）⚡
    ↓
 9. 后台线程执行索引
    ↓
@@ -298,30 +294,52 @@ timeout_count = rag_sync_hook.check_timeout_tasks()
 
 ## 并发安全性保证
 
-### 双重保护机制
+### 简洁优雅的防数据污染机制
 
-系统使用**文档级锁 + UUID 验证**双重机制确保并发安全：
+系统使用 **UUID 验证 + Milvus 删除-重建**机制确保数据一致性，无需复杂的锁机制。
 
-#### 1. 文档级锁（Document-Level Lock）
+#### 核心原理
 
-**目的**：确保同一文档同时只有一个线程执行索引操作
+**UUID 验证**：
+- 每次更新文档时生成新的 `task_uuid`
+- 旧任务在执行过程中检查 UUID，发现不匹配则快速退出
+- 只有最新任务能更新文档状态
 
-**实现**：
+**删除-重建**：
+- 每次索引前先删除该文档的所有旧向量
+- 即使多个任务并发执行删除+插入，最终也只有一份向量数据
+- Milvus 的 delete 和 insert 本身是原子操作
+
+#### 为什么安全
+
 ```python
-# 每个 (user_id, doc_id) 维护一个独立的锁
-_doc_locks = {}  # {(user_id, doc_id): threading.Lock}
+场景：用户快速连续两次更新文档
 
-def _index_document_async(task_uuid, user_id, document):
-    doc_lock = _get_doc_lock(user_id, document.id)
-    
-    # 获取锁（其他线程会在此等待）
-    with doc_lock:
-        # 实际的索引操作
-        ...
+T1: 更新1 → 生成uuid_A → 任务A提交 → 线程1开始
+T2: 更新2 → 生成uuid_B → 任务B提交 → 线程2开始
+
+线程1:
+  1. 检查uuid → 文档uuid=uuid_B, 任务uuid=uuid_A → 不匹配 → 退出
+
+线程2:
+  1. 检查uuid → 文档uuid=uuid_B, 任务uuid=uuid_B → 匹配 ✅
+  2. 删除旧向量（幂等，安全）
+  3. 生成新向量并插入
+  4. 再次检查uuid → 仍然匹配 ✅
+  5. 更新状态为completed
+
+最终结果：
+- ✅ 向量数据对应最新版本（更新2）
+- ✅ 文档状态正确（completed）
+- ✅ 无资源浪费（旧任务快速退出）
 ```
 
-**保证**：
-- ✅ 不同文档可以并发索引（充分利用线程池）
+#### 优势
+
+- ✅ **简洁**：无需维护锁字典和锁逻辑
+- ✅ **高效**：不同文档完全并发，无阻塞
+- ✅ **安全**：UUID验证 + 原子操作保证数据正确性
+- ✅ **优雅**：利用 Milvus 的特性，而非绕过它
 - ✅ 同一文档的索引操作串行化（防止资源竞争）
 - ✅ 即使 `future.cancel()` 失败，新任务也会等待旧任务完成
 
