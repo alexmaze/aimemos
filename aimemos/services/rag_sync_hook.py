@@ -15,6 +15,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, Future
 from ..models.document import Document
 from ..db import get_document_repository
+from ..db.repositories.rag_index_task import RAGIndexTaskRepository
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,9 @@ class RAGSyncHook:
             max_workers=max_workers,
             thread_name_prefix="RAGIndexer-"
         )
+        
+        # RAG 索引任务仓储
+        self._task_repo = RAGIndexTaskRepository()
         
         # 活跃任务追踪：{task_uuid: (Future, doc_id, user_id)}
         self._active_tasks = {}
@@ -94,8 +98,8 @@ class RAGSyncHook:
         
         try:
             # 1. 验证任务是否仍然有效（通过 task_uuid 比对）
-            doc = doc_repo.get_by_id(user_id, document.id)
-            if not doc or doc.rag_index_task_uuid != task_uuid:
+            task = self._task_repo.get_by_document_id(document.id, user_id)
+            if not task or task.task_uuid != task_uuid:
                 logger.info(f"Task {task_uuid} for document {document.id} is stale, skipping")
                 return
             
@@ -110,23 +114,23 @@ class RAGSyncHook:
             # 3. 生成新向量并插入
             # 获取最新文档内容
             doc = doc_repo.get_by_id(user_id, document.id)
-            if not doc or doc.rag_index_task_uuid != task_uuid:
+            task = self._task_repo.get_by_document_id(document.id, user_id)
+            if not task or task.task_uuid != task_uuid:
                 logger.info(f"Task {task_uuid} for document {document.id} was cancelled before indexing")
                 return
             
             chunks_count = rag.index_document(user_id, doc)
             
             # 4. 再次验证任务仍然有效，只有最新任务才更新状态
-            doc = doc_repo.get_by_id(user_id, document.id)
-            if not doc or doc.rag_index_task_uuid != task_uuid:
+            task = self._task_repo.get_by_document_id(document.id, user_id)
+            if not task or task.task_uuid != task_uuid:
                 logger.info(f"Task {task_uuid} for document {document.id} was superseded, not updating status")
                 return
             
             # 5. 更新状态为 completed
-            completed_at = datetime.utcnow()
-            doc_repo.update_rag_index_status(
-                user_id=user_id,
-                doc_id=document.id,
+            completed_at = datetime.now()
+            self._task_repo.update(
+                task_id=task.id,
                 status='completed',
                 completed_at=completed_at
             )
@@ -140,15 +144,14 @@ class RAGSyncHook:
         
         except Exception as e:
             # 验证任务仍然有效
-            doc = doc_repo.get_by_id(user_id, document.id)
-            if not doc or doc.rag_index_task_uuid != task_uuid:
+            task = self._task_repo.get_by_document_id(document.id, user_id)
+            if not task or task.task_uuid != task_uuid:
                 logger.info(f"Task {task_uuid} for document {document.id} was cancelled, not updating error status")
                 return
             
             # 更新状态为 failed
-            doc_repo.update_rag_index_status(
-                user_id=user_id,
-                doc_id=document.id,
+            self._task_repo.update(
+                task_id=task.id,
                 status='failed',
                 error=str(e)
             )
@@ -184,18 +187,21 @@ class RAGSyncHook:
         # 生成任务 UUID
         task_uuid = str(uuid.uuid4())
         
-        # 获取 repository 用于更新状态
-        doc_repo = get_document_repository()
-        
-        # 更新状态为 indexing（先记录到数据库）
+        # 创建或更新 RAG 索引任务记录
         # 新的 task_uuid 会自动使旧任务失效
-        started_at = datetime.utcnow()
-        doc_repo.update_rag_index_status(
+        started_at = datetime.now()
+        task = self._task_repo.upsert(
+            document_id=document.id,
             user_id=user_id,
-            doc_id=document.id,
-            status='indexing',
-            started_at=started_at,
+            knowledge_base_id=document.knowledge_base_id,
             task_uuid=task_uuid,
+            status='indexing'
+        )
+        
+        # 更新开始时间
+        self._task_repo.update(
+            task_id=task.id,
+            started_at=started_at,
             thread_id=None  # 线程ID在任务开始后才知道
         )
         
@@ -244,6 +250,10 @@ class RAGSyncHook:
             return
         
         try:
+            # 删除 RAG 索引任务记录
+            self._task_repo.delete_by_document_id(doc_id, user_id)
+            
+            # 删除向量
             rag = self._get_rag_integration()
             if rag:
                 count = rag.delete_document_vectors(user_id, doc_id)
@@ -260,8 +270,9 @@ class RAGSyncHook:
         Returns:
             标记为超时的任务数量
         """
-        doc_repo = get_document_repository()
-        return doc_repo.check_and_timeout_stale_tasks(self._timeout_seconds)
+        # TODO: Implement batch timeout checking
+        # For now, timeout checking happens when querying individual documents
+        return 0
     
     def get_active_tasks_count(self) -> int:
         """获取当前活跃任务数量
