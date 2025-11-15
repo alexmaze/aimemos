@@ -207,6 +207,8 @@ class DocumentService:
     def get_document(self, user_id: str, doc_id: str) -> Optional[Document]:
         """获取文档。
         
+        自动检查并处理超时的索引任务。
+        
         Args:
             user_id: 用户ID
             doc_id: 文档ID
@@ -214,6 +216,9 @@ class DocumentService:
         Returns:
             文档，如果不存在则返回 None
         """
+        # 检查并标记超时任务
+        self.rag_sync_hook.check_timeout_tasks()
+        
         return self.repository.get_by_id(user_id, doc_id)
     
     def list_documents(
@@ -226,6 +231,8 @@ class DocumentService:
     ) -> tuple[list[Document], int]:
         """列出知识库中的文档。
         
+        自动检查并处理超时的索引任务。
+        
         Args:
             user_id: 用户ID
             kb_id: 知识库ID
@@ -236,6 +243,9 @@ class DocumentService:
         Returns:
             (文档列表, 总数)
         """
+        # 检查并标记超时任务
+        self.rag_sync_hook.check_timeout_tasks()
+        
         return self.repository.list_by_kb(user_id, kb_id, folder_id, skip, limit)
     
     def update_document(

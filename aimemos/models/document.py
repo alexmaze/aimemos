@@ -38,6 +38,8 @@ class Document(BaseModel):
     rag_index_started_at: Optional[datetime] = None  # 索引开始时间
     rag_index_completed_at: Optional[datetime] = None  # 索引完成时间
     rag_index_error: Optional[str] = None  # 错误信息（如果失败）
+    rag_index_task_uuid: Optional[str] = None  # 索引任务的唯一标识符（UUID）
+    rag_index_thread_id: Optional[int] = None  # 索引任务的线程 ID
     
     created_at: datetime
     updated_at: datetime

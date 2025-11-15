@@ -60,6 +60,8 @@ class DocumentResponse(DocumentBase):
     rag_index_started_at: Optional[datetime] = Field(None, description="索引开始时间")
     rag_index_completed_at: Optional[datetime] = Field(None, description="索引完成时间")
     rag_index_error: Optional[str] = Field(None, description="索引错误信息（如果失败）")
+    rag_index_task_uuid: Optional[str] = Field(None, description="索引任务的唯一标识符（UUID）")
+    rag_index_thread_id: Optional[int] = Field(None, description="索引任务的线程 ID")
     
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
