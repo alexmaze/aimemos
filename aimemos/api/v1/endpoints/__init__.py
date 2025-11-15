@@ -2,8 +2,10 @@
 
 from . import auth
 from . import memos
+from . import rag
 
 __all__ = [
     "auth",
     "memos",
+    "rag",
 ]

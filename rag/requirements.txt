@@ -1,0 +1,19 @@
+# RAG Module Dependencies
+# Python 3.9+ compatible
+
+# Core ML and NLP libraries
+transformers>=4.35.0
+torch>=2.0.0
+sentencepiece>=0.1.99
+
+# Vector database
+pymilvus>=2.3.0
+
+# Utilities
+requests>=2.31.0
+tqdm>=4.66.0
+python-dateutil>=2.8.2
+ujson>=5.8.0
+
+# Note: PocketFlow dependencies are handled separately in the pocketflow environment
+# This file only includes dependencies for standalone RAG module usage

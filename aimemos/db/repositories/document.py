@@ -47,6 +47,49 @@ class DocumentRepository:
                 )
             """)
             
+            # 添加 RAG 索引状态字段（如果不存在）
+            try:
+                cursor.execute("""
+                    ALTER TABLE documents ADD COLUMN rag_index_status TEXT
+                """)
+            except Exception:
+                pass  # 列已存在
+            
+            try:
+                cursor.execute("""
+                    ALTER TABLE documents ADD COLUMN rag_index_started_at TEXT
+                """)
+            except Exception:
+                pass
+            
+            try:
+                cursor.execute("""
+                    ALTER TABLE documents ADD COLUMN rag_index_completed_at TEXT
+                """)
+            except Exception:
+                pass
+            
+            try:
+                cursor.execute("""
+                    ALTER TABLE documents ADD COLUMN rag_index_error TEXT
+                """)
+            except Exception:
+                pass
+            
+            try:
+                cursor.execute("""
+                    ALTER TABLE documents ADD COLUMN rag_index_task_uuid TEXT
+                """)
+            except Exception:
+                pass
+            
+            try:
+                cursor.execute("""
+                    ALTER TABLE documents ADD COLUMN rag_index_thread_id INTEGER
+                """)
+            except Exception:
+                pass
+            
             # 创建索引
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_documents_kb_id 
@@ -66,6 +109,11 @@ class DocumentRepository:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_documents_type 
                 ON documents (doc_type)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_documents_rag_status 
+                ON documents (rag_index_status)
             """)
             
             conn.commit()
@@ -253,7 +301,10 @@ class DocumentRepository:
             cursor.execute(
                 """SELECT id, knowledge_base_id, folder_id, user_id, name, doc_type, summary, 
                           content, path, source_file_path, source_file_size, source_file_format,
-                          source_file_created_at, source_file_modified_at, created_at, updated_at
+                          source_file_created_at, source_file_modified_at, 
+                          rag_index_status, rag_index_started_at, rag_index_completed_at, rag_index_error,
+                          rag_index_task_uuid, rag_index_thread_id,
+                          created_at, updated_at
                    FROM documents WHERE id = ? AND user_id = ?""",
                 (doc_id, user_id)
             )
@@ -277,6 +328,12 @@ class DocumentRepository:
                 source_file_format=row["source_file_format"],
                 source_file_created_at=datetime.fromisoformat(row["source_file_created_at"]) if row["source_file_created_at"] else None,
                 source_file_modified_at=datetime.fromisoformat(row["source_file_modified_at"]) if row["source_file_modified_at"] else None,
+                rag_index_status=row.get("rag_index_status"),
+                rag_index_started_at=datetime.fromisoformat(row["rag_index_started_at"]) if row.get("rag_index_started_at") else None,
+                rag_index_completed_at=datetime.fromisoformat(row["rag_index_completed_at"]) if row.get("rag_index_completed_at") else None,
+                rag_index_error=row.get("rag_index_error"),
+                rag_index_task_uuid=row.get("rag_index_task_uuid"),
+                rag_index_thread_id=row.get("rag_index_thread_id"),
                 created_at=datetime.fromisoformat(row["created_at"]),
                 updated_at=datetime.fromisoformat(row["updated_at"])
             )
@@ -307,7 +364,10 @@ class DocumentRepository:
                 cursor.execute(
                     """SELECT id, knowledge_base_id, folder_id, user_id, name, doc_type, summary, 
                               content, path, source_file_path, source_file_size, source_file_format,
-                              source_file_created_at, source_file_modified_at, created_at, updated_at
+                              source_file_created_at, source_file_modified_at, 
+                              rag_index_status, rag_index_started_at, rag_index_completed_at, rag_index_error,
+                              rag_index_task_uuid, rag_index_thread_id,
+                              created_at, updated_at
                        FROM documents WHERE knowledge_base_id = ? AND user_id = ? AND folder_id IS NULL
                        ORDER BY 
                            CASE doc_type 
@@ -329,7 +389,10 @@ class DocumentRepository:
                 cursor.execute(
                     """SELECT id, knowledge_base_id, folder_id, user_id, name, doc_type, summary, 
                               content, path, source_file_path, source_file_size, source_file_format,
-                              source_file_created_at, source_file_modified_at, created_at, updated_at
+                              source_file_created_at, source_file_modified_at, 
+                              rag_index_status, rag_index_started_at, rag_index_completed_at, rag_index_error,
+                              rag_index_task_uuid, rag_index_thread_id,
+                              created_at, updated_at
                        FROM documents WHERE knowledge_base_id = ? AND user_id = ? AND folder_id = ?
                        ORDER BY 
                            CASE doc_type 
@@ -357,6 +420,12 @@ class DocumentRepository:
                     source_file_format=row["source_file_format"],
                     source_file_created_at=datetime.fromisoformat(row["source_file_created_at"]) if row["source_file_created_at"] else None,
                     source_file_modified_at=datetime.fromisoformat(row["source_file_modified_at"]) if row["source_file_modified_at"] else None,
+                    rag_index_status=row.get("rag_index_status"),
+                    rag_index_started_at=datetime.fromisoformat(row["rag_index_started_at"]) if row.get("rag_index_started_at") else None,
+                    rag_index_completed_at=datetime.fromisoformat(row["rag_index_completed_at"]) if row.get("rag_index_completed_at") else None,
+                    rag_index_error=row.get("rag_index_error"),
+                    rag_index_task_uuid=row.get("rag_index_task_uuid"),
+                    rag_index_thread_id=row.get("rag_index_thread_id"),
                     created_at=datetime.fromisoformat(row["created_at"]),
                     updated_at=datetime.fromisoformat(row["updated_at"])
                 )
@@ -433,6 +502,12 @@ class DocumentRepository:
                 source_file_format=doc.source_file_format,
                 source_file_created_at=doc.source_file_created_at,
                 source_file_modified_at=doc.source_file_modified_at,
+                rag_index_status=doc.rag_index_status,
+                rag_index_started_at=doc.rag_index_started_at,
+                rag_index_completed_at=doc.rag_index_completed_at,
+                rag_index_error=doc.rag_index_error,
+                rag_index_task_uuid=doc.rag_index_task_uuid,
+                rag_index_thread_id=doc.rag_index_thread_id,
                 created_at=doc.created_at,
                 updated_at=updated_at
             )
@@ -456,7 +531,10 @@ class DocumentRepository:
             cursor.execute(
                 """SELECT id, knowledge_base_id, folder_id, user_id, name, doc_type, summary, 
                           content, path, source_file_path, source_file_size, source_file_format,
-                          source_file_created_at, source_file_modified_at, created_at, updated_at
+                          source_file_created_at, source_file_modified_at, 
+                          rag_index_status, rag_index_started_at, rag_index_completed_at, rag_index_error,
+                          rag_index_task_uuid, rag_index_thread_id,
+                          created_at, updated_at
                    FROM documents 
                    WHERE knowledge_base_id = ? AND user_id = ? 
                    AND doc_type != 'folder'
@@ -485,6 +563,12 @@ class DocumentRepository:
                     source_file_format=row["source_file_format"],
                     source_file_created_at=datetime.fromisoformat(row["source_file_created_at"]) if row["source_file_created_at"] else None,
                     source_file_modified_at=datetime.fromisoformat(row["source_file_modified_at"]) if row["source_file_modified_at"] else None,
+                    rag_index_status=row.get("rag_index_status"),
+                    rag_index_started_at=datetime.fromisoformat(row["rag_index_started_at"]) if row.get("rag_index_started_at") else None,
+                    rag_index_completed_at=datetime.fromisoformat(row["rag_index_completed_at"]) if row.get("rag_index_completed_at") else None,
+                    rag_index_error=row.get("rag_index_error"),
+                    rag_index_task_uuid=row.get("rag_index_task_uuid"),
+                    rag_index_thread_id=row.get("rag_index_thread_id"),
                     created_at=datetime.fromisoformat(row["created_at"]),
                     updated_at=datetime.fromisoformat(row["updated_at"])
                 )
@@ -492,3 +576,105 @@ class DocumentRepository:
             ]
             
             return results
+    
+    def update_rag_index_status(
+        self,
+        user_id: str,
+        doc_id: str,
+        status: str,
+        started_at: Optional[datetime] = None,
+        completed_at: Optional[datetime] = None,
+        error: Optional[str] = None,
+        task_uuid: Optional[str] = None,
+        thread_id: Optional[int] = None
+    ) -> bool:
+        """更新文档的 RAG 索引状态。
+        
+        Args:
+            user_id: 用户 ID
+            doc_id: 文档 ID
+            status: 状态: 'pending', 'indexing', 'completed', 'failed', 'timeout'
+            started_at: 开始时间（可选）
+            completed_at: 完成时间（可选）
+            error: 错误信息（可选，用于 failed 状态）
+            task_uuid: 任务唯一标识符（可选）
+            thread_id: 线程 ID（可选）
+            
+        Returns:
+            是否更新成功
+        """
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """UPDATE documents 
+                   SET rag_index_status = ?,
+                       rag_index_started_at = ?,
+                       rag_index_completed_at = ?,
+                       rag_index_error = ?,
+                       rag_index_task_uuid = ?,
+                       rag_index_thread_id = ?
+                   WHERE id = ? AND user_id = ?""",
+                (
+                    status,
+                    started_at.isoformat() if started_at else None,
+                    completed_at.isoformat() if completed_at else None,
+                    error,
+                    task_uuid,
+                    thread_id,
+                    doc_id,
+                    user_id
+                )
+            )
+            return cursor.rowcount > 0
+    
+    def get_indexing_tasks(self) -> list[dict]:
+        """获取所有正在索引的任务信息。
+        
+        Returns:
+            正在索引的任务列表，包含 doc_id, user_id, task_uuid, thread_id, started_at
+        """
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT id as doc_id, user_id, rag_index_task_uuid, 
+                          rag_index_thread_id, rag_index_started_at
+                   FROM documents 
+                   WHERE rag_index_status = 'indexing'"""
+            )
+            
+            return [
+                {
+                    'doc_id': row['doc_id'],
+                    'user_id': row['user_id'],
+                    'task_uuid': row['rag_index_task_uuid'],
+                    'thread_id': row['rag_index_thread_id'],
+                    'started_at': datetime.fromisoformat(row['rag_index_started_at']) if row['rag_index_started_at'] else None
+                }
+                for row in cursor.fetchall()
+            ]
+    
+    def check_and_timeout_stale_tasks(self, timeout_seconds: int = 300) -> int:
+        """检查并标记超时的索引任务。
+        
+        Args:
+            timeout_seconds: 超时时间（秒），默认 300 秒（5 分钟）
+            
+        Returns:
+            标记为超时的任务数量
+        """
+        timeout_threshold = datetime.utcnow().timestamp() - timeout_seconds
+        
+        with self.db.get_connection() as conn:
+            cursor = conn.cursor()
+            # 找出所有超时的任务
+            cursor.execute(
+                """UPDATE documents 
+                   SET rag_index_status = 'timeout',
+                       rag_index_completed_at = ?,
+                       rag_index_error = 'Task exceeded timeout limit'
+                   WHERE rag_index_status = 'indexing'
+                   AND rag_index_started_at IS NOT NULL
+                   AND unixepoch(rag_index_started_at) < ?""",
+                (datetime.utcnow().isoformat(), timeout_threshold)
+            )
+            return cursor.rowcount
