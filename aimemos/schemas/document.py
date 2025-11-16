@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field
 
+from .rag_index_task import RAGIndexTaskResponse
+
 
 class DocumentBase(BaseModel):
     """文档的基础模型。"""
@@ -54,6 +56,9 @@ class DocumentResponse(DocumentBase):
     source_file_format: Optional[str] = Field(None, description="源文件格式")
     source_file_created_at: Optional[datetime] = Field(None, description="源文件创建时间")
     source_file_modified_at: Optional[datetime] = Field(None, description="源文件修改时间")
+    
+    # RAG 索引任务信息（关联查询）
+    rag_index_task: Optional[RAGIndexTaskResponse] = Field(None, description="RAG 索引任务信息")
     
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")

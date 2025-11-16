@@ -13,6 +13,7 @@ from ..schemas.document import DocumentCreate, DocumentUpdate
 from ..db import get_document_repository, get_knowledge_base_repository
 from ..config import get_settings
 from .file_handler import FileHandler
+from .rag_sync_hook import get_rag_sync_hook
 
 
 def sanitize_path_component(component: str) -> str:
@@ -41,6 +42,7 @@ class DocumentService:
         self.kb_repository = get_knowledge_base_repository()
         self.settings = get_settings()
         self.file_handler = FileHandler()
+        self.rag_sync_hook = get_rag_sync_hook()
     
     def create_note(
         self, 
@@ -63,7 +65,12 @@ class DocumentService:
         if not kb:
             raise ValueError("知识库不存在")
         
-        return self.repository.create_note(user_id, kb_id, doc_data)
+        doc = self.repository.create_note(user_id, kb_id, doc_data)
+        
+        # 触发 RAG 自动索引
+        self.rag_sync_hook.on_document_created(user_id, doc)
+        
+        return doc
     
     def create_folder(
         self,
@@ -177,7 +184,7 @@ class DocumentService:
         relative_path = str(file_path.relative_to(storage_root))
         
         # 创建文档记录（使用预先生成的doc_id）
-        return self.repository.create_uploaded(
+        doc = self.repository.create_uploaded(
             doc_id=doc_id,
             user_id=user_id,
             kb_id=kb_id,
@@ -191,9 +198,16 @@ class DocumentService:
             source_file_modified_at=file_modified_at,
             summary=summary
         )
+        
+        # 触发 RAG 自动索引
+        self.rag_sync_hook.on_document_created(user_id, doc)
+        
+        return doc
     
     def get_document(self, user_id: str, doc_id: str) -> Optional[Document]:
         """获取文档。
+        
+        自动检查并处理超时的索引任务。
         
         Args:
             user_id: 用户ID
@@ -202,6 +216,9 @@ class DocumentService:
         Returns:
             文档，如果不存在则返回 None
         """
+        # 检查并标记超时任务
+        self.rag_sync_hook.check_timeout_tasks()
+        
         return self.repository.get_by_id(user_id, doc_id)
     
     def list_documents(
@@ -214,6 +231,8 @@ class DocumentService:
     ) -> tuple[list[Document], int]:
         """列出知识库中的文档。
         
+        自动检查并处理超时的索引任务。
+        
         Args:
             user_id: 用户ID
             kb_id: 知识库ID
@@ -224,6 +243,9 @@ class DocumentService:
         Returns:
             (文档列表, 总数)
         """
+        # 检查并标记超时任务
+        self.rag_sync_hook.check_timeout_tasks()
+        
         return self.repository.list_by_kb(user_id, kb_id, folder_id, skip, limit)
     
     def update_document(
@@ -242,7 +264,13 @@ class DocumentService:
         Returns:
             更新后的文档，如果不存在则返回 None
         """
-        return self.repository.update(user_id, doc_id, doc_data)
+        doc = self.repository.update(user_id, doc_id, doc_data)
+        
+        # 如果更新成功，触发 RAG 重新索引
+        if doc:
+            self.rag_sync_hook.on_document_updated(user_id, doc)
+        
+        return doc
     
     def delete_document(self, user_id: str, doc_id: str) -> bool:
         """删除文档。
@@ -272,7 +300,14 @@ class DocumentService:
                     # 忽略删除文件时的错误
                     pass
         
-        return self.repository.delete(user_id, doc_id)
+        # 删除文档记录
+        success = self.repository.delete(user_id, doc_id)
+        
+        # 如果删除成功，触发 RAG 向量删除
+        if success:
+            self.rag_sync_hook.on_document_deleted(user_id, doc_id)
+        
+        return success
     
     def search_documents(
         self, 

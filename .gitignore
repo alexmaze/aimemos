@@ -214,3 +214,16 @@ __marimo__/
 
 # Storage directory for knowledge base files
 storage/
+
+# RAG module artifacts
+# Milvus vector database files (already covered by *.db above but being explicit)
+milvus_demo.db
+milvus_demo.db-*
+# Downloaded ML models cache
+.cache/
+huggingface/
+transformers_cache/
+# Test data directory (users should create their own)
+data/kb/*
+!data/kb/.gitkeep
+!data/kb/README.md
