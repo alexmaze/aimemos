@@ -135,77 +135,7 @@ class RAGIntegration:
         
         return len(chunks)
     
-    def index_knowledge_base(
-        self,
-        user_id: str,
-        kb_id: str,
-        max_tokens: int = 512,
-        overlap_tokens: int = 128,
-        show_progress: bool = True
-    ) -> Dict[str, Any]:
-        """
-        索引整个知识库的所有文档
-        
-        Args:
-            user_id: 用户 ID
-            kb_id: 知识库 ID
-            max_tokens: 每块最大 token 数
-            overlap_tokens: 重叠 token 数
-            show_progress: 是否显示进度
-            
-        Returns:
-            索引统计信息
-        """
-        # 验证知识库权限
-        kb = self.kb_service.get_knowledge_base(user_id, kb_id)
-        if not kb:
-            raise ValueError(f"知识库 {kb_id} 不存在或无权访问")
-        
-        # 获取所有文档
-        documents, total = self.doc_service.list_documents(
-            user_id,
-            kb_id,
-            skip=0,
-            limit=10000  # 假设单个知识库不超过10000个文档
-        )
-        
-        stats = {
-            'kb_id': kb_id,
-            'kb_name': kb.name,
-            'total_documents': total,
-            'indexed_documents': 0,
-            'total_chunks': 0,
-            'skipped_documents': 0
-        }
-        
-        # 索引每个文档
-        if show_progress:
-            from tqdm import tqdm
-            iterator = tqdm(documents, desc=f"索引知识库 {kb.name}")
-        else:
-            iterator = documents
-        
-        for doc in iterator:
-            try:
-                chunks_count = self.index_document(
-                    user_id,
-                    doc,
-                    max_tokens=max_tokens,
-                    overlap_tokens=overlap_tokens
-                )
-                
-                if chunks_count > 0:
-                    stats['indexed_documents'] += 1
-                    stats['total_chunks'] += chunks_count
-                else:
-                    stats['skipped_documents'] += 1
-                    
-            except Exception as e:
-                print(f"索引文档 {doc.name} 失败: {e}")
-                stats['skipped_documents'] += 1
-        
-        return stats
-    
+
     def search_in_knowledge_base(
         self,
         user_id: str,
@@ -415,8 +345,8 @@ if __name__ == "__main__":
     parser.add_argument(
         '--action',
         type=str,
-        choices=['index', 'search', 'delete'],
-        default='index',
+        choices=['search', 'delete'],
+        default='search',
         help='操作类型'
     )
     parser.add_argument(
@@ -442,26 +372,7 @@ if __name__ == "__main__":
     rag = create_rag_integration()
     
     try:
-        if args.action == 'index':
-            print(f"索引知识库: {args.kb_id}")
-            print(f"用户: {args.user_id}")
-            print()
-            
-            stats = rag.index_knowledge_base(
-                user_id=args.user_id,
-                kb_id=args.kb_id,
-                show_progress=True
-            )
-            
-            print()
-            print("索引完成！")
-            print(f"  知识库: {stats['kb_name']}")
-            print(f"  总文档数: {stats['total_documents']}")
-            print(f"  已索引: {stats['indexed_documents']}")
-            print(f"  跳过: {stats['skipped_documents']}")
-            print(f"  总块数: {stats['total_chunks']}")
-            
-        elif args.action == 'search':
+        if args.action == 'search':
             if not args.query:
                 print("错误: search 操作需要 --query 参数")
                 exit(1)
