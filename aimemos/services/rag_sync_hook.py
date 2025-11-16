@@ -87,6 +87,14 @@ class RAGSyncHook:
         使用 UUID 验证 + Milvus 删除-重建机制确保数据一致性。
         即使多个任务并发执行，最终也只有最新任务的结果会被保留。
         
+        关键防护机制：
+        1. 初始验证：检查任务是否仍然有效
+        2. 删除旧向量：幂等操作，安全地删除所有旧向量
+        3. 最终验证：在写入向量之前再次验证任务和文档仍然存在
+           - 防止在删除向量后、写入新向量前文档或任务被删除的竞态条件
+        4. 写入新向量：只有验证通过才执行
+        5. 后验证：确保只有最新任务才更新状态
+        
         Args:
             task_uuid: 任务唯一标识符
             user_id: 用户 ID
@@ -114,9 +122,23 @@ class RAGSyncHook:
             # 3. 生成新向量并插入
             # 获取最新文档内容
             doc = doc_repo.get_by_id(user_id, document.id)
-            task = self._task_repo.get_by_document_id(document.id, user_id)
-            if not task or task.task_uuid != task_uuid:
-                logger.info(f"Task {task_uuid} for document {document.id} was cancelled before indexing")
+            
+            # 最终验证：在写入向量之前再次检查任务和文档是否仍然有效
+            # 这是关键的竞态条件防护：防止在 delete_document_vectors 之后、
+            # index_document 之前文档或任务被删除
+            latest_task = self._task_repo.get_by_document_id(document.id, user_id)
+            if not latest_task or latest_task.task_uuid != task_uuid:
+                logger.info(
+                    f"Task {task_uuid} for document {document.id} was cancelled or superseded "
+                    f"before writing vectors; aborting indexing"
+                )
+                return
+            
+            if not doc:
+                logger.info(
+                    f"Document {document.id} no longer exists before writing vectors; "
+                    f"aborting indexing"
+                )
                 return
             
             chunks_count = rag.index_document(user_id, doc)
