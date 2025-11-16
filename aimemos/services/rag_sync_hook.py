@@ -114,9 +114,23 @@ class RAGSyncHook:
             # 3. 生成新向量并插入
             # 获取最新文档内容
             doc = doc_repo.get_by_id(user_id, document.id)
-            task = self._task_repo.get_by_document_id(document.id, user_id)
-            if not task or task.task_uuid != task_uuid:
-                logger.info(f"Task {task_uuid} for document {document.id} was cancelled before indexing")
+            
+            # 最终验证：在写入向量之前再次检查任务和文档是否仍然有效
+            # 这是关键的竞态条件防护：防止在 delete_document_vectors 之后、
+            # index_document 之前文档或任务被删除
+            latest_task = self._task_repo.get_by_document_id(document.id, user_id)
+            if not latest_task or latest_task.task_uuid != task_uuid:
+                logger.info(
+                    f"Task {task_uuid} for document {document.id} was cancelled or superseded "
+                    f"before writing vectors; aborting indexing"
+                )
+                return
+            
+            if not doc:
+                logger.info(
+                    f"Document {document.id} no longer exists before writing vectors; "
+                    f"aborting indexing"
+                )
                 return
             
             chunks_count = rag.index_document(user_id, doc)
