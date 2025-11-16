@@ -114,6 +114,12 @@ class RAGSyncHook:
             # 3. 生成新向量并插入
             # 获取最新文档内容
             doc = doc_repo.get_by_id(user_id, document.id)
+            
+            # Final validation before indexing: ensure document and task still exist
+            if not doc:
+                logger.info(f"Document {document.id} was deleted before indexing, aborting task {task_uuid}")
+                return
+            
             task = self._task_repo.get_by_document_id(document.id, user_id)
             if not task or task.task_uuid != task_uuid:
                 logger.info(f"Task {task_uuid} for document {document.id} was cancelled before indexing")
