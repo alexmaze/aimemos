@@ -4,12 +4,17 @@ from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Query, Depends, status
 from pydantic import BaseModel, Field
 
-import sys
-import os
-# Add rag directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'rag'))
-
-from rag.integration import create_rag_integration
+# Try to import RAG dependencies, but don't fail if not available
+try:
+    import sys
+    import os
+    # Add rag directory to path
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'rag'))
+    from rag.integration import create_rag_integration
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+    create_rag_integration = None
 
 from ....services.knowledge_base import get_knowledge_base_service
 from ...dependencies import get_current_user
@@ -22,6 +27,11 @@ _rag_integration = None
 
 def get_rag_integration():
     """获取 RAG 集成实例（单例模式）"""
+    if not RAG_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="RAG功能未启用，请安装相关依赖"
+        )
     global _rag_integration
     if _rag_integration is None:
         _rag_integration = create_rag_integration()
