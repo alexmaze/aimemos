@@ -227,3 +227,5 @@ transformers_cache/
 data/kb/*
 !data/kb/.gitkeep
 !data/kb/README.md
+
+.vscode/
