@@ -11,6 +11,8 @@ from .db.storage import (
     get_memo_repository,
     get_knowledge_base_repository,
     get_document_repository,
+    get_chat_session_repository,
+    get_chat_message_repository,
 )
 
 
@@ -47,6 +49,8 @@ def create_app() -> FastAPI:
         get_memo_repository()
         get_knowledge_base_repository()
         get_document_repository()
+        get_chat_session_repository()
+        get_chat_message_repository()
     
     @app.get("/", summary="根端点")
     async def root():

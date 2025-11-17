@@ -7,6 +7,8 @@ from .repositories import (
     MemoRepository,
     KnowledgeBaseRepository,
     DocumentRepository,
+    ChatSessionRepository,
+    ChatMessageRepository,
 )
 
 
@@ -15,6 +17,8 @@ _user_repository: Optional[UserRepository] = None
 _memo_repository: Optional[MemoRepository] = None
 _knowledge_base_repository: Optional[KnowledgeBaseRepository] = None
 _document_repository: Optional[DocumentRepository] = None
+_chat_session_repository: Optional[ChatSessionRepository] = None
+_chat_message_repository: Optional[ChatMessageRepository] = None
 
 
 def get_user_repository() -> UserRepository:
@@ -47,3 +51,19 @@ def get_document_repository() -> DocumentRepository:
     if _document_repository is None:
         _document_repository = DocumentRepository()
     return _document_repository
+
+
+def get_chat_session_repository() -> ChatSessionRepository:
+    """获取或创建全局聊天会话仓储实例。"""
+    global _chat_session_repository
+    if _chat_session_repository is None:
+        _chat_session_repository = ChatSessionRepository()
+    return _chat_session_repository
+
+
+def get_chat_message_repository() -> ChatMessageRepository:
+    """获取或创建全局聊天消息仓储实例。"""
+    global _chat_message_repository
+    if _chat_message_repository is None:
+        _chat_message_repository = ChatMessageRepository()
+    return _chat_message_repository

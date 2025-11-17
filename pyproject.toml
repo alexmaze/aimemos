@@ -24,6 +24,14 @@ aimemos = "aimemos.main:main"
 demo = [
     "requests>=2.32.5",
 ]
+rag = [
+    "transformers>=4.35.0",
+    "torch>=2.0.0",
+    "sentencepiece>=0.1.99",
+    "pymilvus>=2.3.0",
+    "tqdm>=4.66.0",
+    "ujson>=5.8.0",
+]
 
 [tool.uv]
 package = true
