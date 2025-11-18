@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     # 文件存储配置
     # 知识库文件存储根目录
     storage_root: str = "./storage"
+
+    # 可选的 OpenAI / LLM 配置（来自 .env 的 OPENAI_BASE_URL / OPENAI_API_KEY）
+    # 如果你的环境中没有这些值，保持为 None 即可。
+    openai_base_url: str | None = None
+    openai_api_key: str | None = None
     
     class Config:
         env_file = ".env"

@@ -104,7 +104,10 @@ class RAGIndexTaskRepository:
                   task_uuid, now, now))
             conn.commit()
         
-        return self.get_by_id(task_id)
+        task = self.get_by_id(task_id)
+        if task is None:
+            raise RuntimeError(f"Failed to retrieve created RAGIndexTask with id {task_id}")
+        return task
     
     def get_by_id(self, task_id: str) -> Optional[RAGIndexTask]:
         """根据任务ID获取 RAG 索引任务。
@@ -253,7 +256,10 @@ class RAGIndexTaskRepository:
                 """, (task_uuid, status, now, task_id))
                 conn.commit()
             
-            return self.get_by_id(task_id)
+            task = self.get_by_id(task_id)
+            if task is None:
+                raise RuntimeError(f"Failed to retrieve updated RAGIndexTask with id {task_id}")
+            return task
         else:
             # 创建新任务
             return self.create(document_id, user_id, knowledge_base_id, task_uuid, status)

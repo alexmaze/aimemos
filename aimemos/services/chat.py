@@ -10,19 +10,48 @@ from ..models.chat_message import ChatMessage
 from ..schemas.chat_session import ChatSessionCreate, ChatSessionUpdate
 from ..schemas.chat_message import ChatMessageCreate, ChatStreamChunk
 
-# Try to import RAG dependencies, but don't fail if not available
-try:
-    import sys
-    import os
-    # Add rag directory to path
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'rag'))
-    from rag.llm_client import LLMClient
-    from rag.integration import create_rag_integration
-    RAG_AVAILABLE = True
-except ImportError:
-    RAG_AVAILABLE = False
-    LLMClient = None
-    create_rag_integration = None
+# RAG lazy import variables. We avoid importing rag at module import time to
+# prevent ImportError / circular import problems. Use _init_rag_once() to
+# initialize when needed.
+RAG_AVAILABLE = False
+LLMClient = None
+create_rag_integration = None
+_rag_import_error = None
+
+
+def _init_rag_once() -> None:
+    """Attempt to import rag modules once. On failure we record the
+    exception and keep RAG disabled so the rest of the app can run.
+    """
+    global RAG_AVAILABLE, LLMClient, create_rag_integration, _rag_import_error
+    # If already initialized (successfully or not), return early
+    if RAG_AVAILABLE or LLMClient is not None or create_rag_integration is not None or _rag_import_error is not None:
+        return
+
+    try:
+        import sys
+        import os
+        import logging
+        # Add rag directory to path
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'rag'))
+        from rag.llm_client import LLMClient as _LLMClient
+        from rag.integration import create_rag_integration as _create_rag_integration
+
+        LLMClient = _LLMClient
+        create_rag_integration = _create_rag_integration
+        RAG_AVAILABLE = True
+    except Exception as e:  # noqa: BLE001 - we want to catch import failures
+        RAG_AVAILABLE = False
+        LLMClient = None
+        create_rag_integration = None
+        _rag_import_error = e
+        try:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"RAG import failed: {e}")
+        except Exception:
+            # Best-effort logging; do not raise
+            pass
 
 
 class ChatService:
@@ -35,16 +64,26 @@ class ChatService:
         """初始化聊天服务。"""
         self.session_repo = ChatSessionRepository()
         self.message_repo = ChatMessageRepository()
+        # Try to initialize RAG (lazy). This will not raise on import-time.
+        _init_rag_once()
         self.llm_client = LLMClient() if RAG_AVAILABLE else None
         self._rag_integration = None
     
     @property
     def rag_integration(self):
         """获取RAG集成实例（懒加载）。"""
+        # Ensure RAG is initialized before attempting to use it
+        _init_rag_once()
         if not RAG_AVAILABLE:
             return None
         if self._rag_integration is None:
-            self._rag_integration = create_rag_integration()
+            try:
+                self._rag_integration = create_rag_integration()
+            except Exception as e:
+                # Fail gracefully and disable RAG for this service instance
+                import logging
+                logging.getLogger(__name__).warning(f"Failed to create RAG integration: {e}")
+                return None
         return self._rag_integration
     
     def create_session(
@@ -146,7 +185,7 @@ class ChatService:
         if session.knowledge_base_id:
             try:
                 # 步骤1: 开始RAG检索
-                yield f"data: {json.dumps({'type': 'rag_step', 'step': 'search_start', 'data': {{'kb_id': session.knowledge_base_id}}}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'rag_step', 'step': 'search_start', 'data': {'kb_id': session.knowledge_base_id}}, ensure_ascii=False)}\n\n"
                 
                 # 执行向量搜索
                 search_results = self.rag_integration.search_in_knowledge_base(
@@ -157,7 +196,7 @@ class ChatService:
                 )
                 
                 # 步骤2: 检索完成
-                yield f"data: {json.dumps({'type': 'rag_step', 'step': 'search_complete', 'data': {{'count': len(search_results)}}}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'rag_step', 'step': 'search_complete', 'data': {'count': len(search_results)}}, ensure_ascii=False)}\n\n"
                 
                 if search_results:
                     # 步骤3: 组织上下文
@@ -187,11 +226,11 @@ class ChatService:
                     })
                     
                     # 步骤4: 上下文构建完成
-                    yield f"data: {json.dumps({'type': 'rag_step', 'step': 'context_complete', 'data': {{'sources': len(rag_sources)}}}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'rag_step', 'step': 'context_complete', 'data': {'sources': len(rag_sources)}}, ensure_ascii=False)}\n\n"
             
             except Exception as e:
                 # RAG失败时继续，但不使用上下文
-                yield f"data: {json.dumps({'type': 'rag_step', 'step': 'search_error', 'data': {{'error': str(e)}}}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'rag_step', 'step': 'search_error', 'data': {'error': str(e)}}, ensure_ascii=False)}\n\n"
         
         # 如果没有RAG上下文，添加默认系统提示
         if not rag_context:

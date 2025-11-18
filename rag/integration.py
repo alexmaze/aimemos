@@ -18,9 +18,9 @@ from aimemos.services.knowledge_base import get_knowledge_base_service
 from aimemos.services.document import get_document_service
 
 # Import RAG modules
-from embeddings import create_embedder, M3EEmbeddings
-from vector_store import create_vector_store, MilvusVectorStore
-from ingest import chunk_text_by_tokens
+from rag.embeddings import create_embedder, M3EEmbeddings
+from rag.vector_store import create_vector_store, MilvusVectorStore
+from rag.ingest import chunk_text_by_tokens
 
 
 class RAGIntegration:

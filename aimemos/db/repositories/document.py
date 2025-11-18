@@ -328,12 +328,6 @@ class DocumentRepository:
                 source_file_format=row["source_file_format"],
                 source_file_created_at=datetime.fromisoformat(row["source_file_created_at"]) if row["source_file_created_at"] else None,
                 source_file_modified_at=datetime.fromisoformat(row["source_file_modified_at"]) if row["source_file_modified_at"] else None,
-                rag_index_status=row.get("rag_index_status"),
-                rag_index_started_at=datetime.fromisoformat(row["rag_index_started_at"]) if row.get("rag_index_started_at") else None,
-                rag_index_completed_at=datetime.fromisoformat(row["rag_index_completed_at"]) if row.get("rag_index_completed_at") else None,
-                rag_index_error=row.get("rag_index_error"),
-                rag_index_task_uuid=row.get("rag_index_task_uuid"),
-                rag_index_thread_id=row.get("rag_index_thread_id"),
                 created_at=datetime.fromisoformat(row["created_at"]),
                 updated_at=datetime.fromisoformat(row["updated_at"])
             )
@@ -420,12 +414,6 @@ class DocumentRepository:
                     source_file_format=row["source_file_format"],
                     source_file_created_at=datetime.fromisoformat(row["source_file_created_at"]) if row["source_file_created_at"] else None,
                     source_file_modified_at=datetime.fromisoformat(row["source_file_modified_at"]) if row["source_file_modified_at"] else None,
-                    rag_index_status=row.get("rag_index_status"),
-                    rag_index_started_at=datetime.fromisoformat(row["rag_index_started_at"]) if row.get("rag_index_started_at") else None,
-                    rag_index_completed_at=datetime.fromisoformat(row["rag_index_completed_at"]) if row.get("rag_index_completed_at") else None,
-                    rag_index_error=row.get("rag_index_error"),
-                    rag_index_task_uuid=row.get("rag_index_task_uuid"),
-                    rag_index_thread_id=row.get("rag_index_thread_id"),
                     created_at=datetime.fromisoformat(row["created_at"]),
                     updated_at=datetime.fromisoformat(row["updated_at"])
                 )
@@ -502,12 +490,6 @@ class DocumentRepository:
                 source_file_format=doc.source_file_format,
                 source_file_created_at=doc.source_file_created_at,
                 source_file_modified_at=doc.source_file_modified_at,
-                rag_index_status=doc.rag_index_status,
-                rag_index_started_at=doc.rag_index_started_at,
-                rag_index_completed_at=doc.rag_index_completed_at,
-                rag_index_error=doc.rag_index_error,
-                rag_index_task_uuid=doc.rag_index_task_uuid,
-                rag_index_thread_id=doc.rag_index_thread_id,
                 created_at=doc.created_at,
                 updated_at=updated_at
             )
@@ -563,12 +545,6 @@ class DocumentRepository:
                     source_file_format=row["source_file_format"],
                     source_file_created_at=datetime.fromisoformat(row["source_file_created_at"]) if row["source_file_created_at"] else None,
                     source_file_modified_at=datetime.fromisoformat(row["source_file_modified_at"]) if row["source_file_modified_at"] else None,
-                    rag_index_status=row.get("rag_index_status"),
-                    rag_index_started_at=datetime.fromisoformat(row["rag_index_started_at"]) if row.get("rag_index_started_at") else None,
-                    rag_index_completed_at=datetime.fromisoformat(row["rag_index_completed_at"]) if row.get("rag_index_completed_at") else None,
-                    rag_index_error=row.get("rag_index_error"),
-                    rag_index_task_uuid=row.get("rag_index_task_uuid"),
-                    rag_index_thread_id=row.get("rag_index_thread_id"),
                     created_at=datetime.fromisoformat(row["created_at"]),
                     updated_at=datetime.fromisoformat(row["updated_at"])
                 )

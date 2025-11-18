@@ -13,8 +13,8 @@ import time
 import argparse
 from tqdm import tqdm
 
-from embeddings import create_embedder, M3EEmbeddings
-from vector_store import create_vector_store, MilvusVectorStore
+from rag.embeddings import create_embedder, M3EEmbeddings
+from rag.vector_store import create_vector_store, MilvusVectorStore
 
 
 def read_text_file(file_path: str) -> str:

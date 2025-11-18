@@ -140,6 +140,17 @@ class MilvusVectorStore:
         if utility.has_collection(self.collection_name):
             logger.info(f"Collection '{self.collection_name}' already exists")
             self.collection = Collection(self.collection_name)
+            # Ensure an index exists for the embedding field; create if missing.
+            try:
+                # Try to create index if it's not present. create_index will be
+                # a no-op if index already exists for some Milvus versions, but
+                # we wrap in try/except to be safe.
+                self.create_index()
+            except Exception:
+                # If creation fails here (e.g. due to parameters or existing
+                # index differences), we don't want to crash initialization; log
+                # and continue. Search will attempt to create index on demand.
+                logger.debug("create_index during init failed or index already exists")
         else:
             logger.info(f"Creating collection: {self.collection_name}")
             schema = self._create_schema()
@@ -148,6 +159,11 @@ class MilvusVectorStore:
                 schema=schema
             )
             logger.info(f"Collection '{self.collection_name}' created successfully")
+            # Create index for embedding field on newly created collection
+            try:
+                self.create_index()
+            except Exception:
+                logger.warning("Failed to create index on newly created collection; search may fail until an index is present")
     
     def create_index(
         self,
@@ -278,15 +294,39 @@ class MilvusVectorStore:
         
         logger.info(f"Searching for {len(query_embeddings)} queries, top_k={top_k}")
         
-        # Perform search
-        results = self.collection.search(
-            data=query_embeddings,
-            anns_field="embedding",
-            param=search_params,
-            limit=top_k,
-            expr=filter_expr,
-            output_fields=output_fields
-        )
+        # Perform search. If search fails due to missing index, try to create
+        # the index and retry once.
+        try:
+            results = self.collection.search(
+                data=query_embeddings,
+                anns_field="embedding",
+                param=search_params,
+                limit=top_k,
+                expr=filter_expr,
+                output_fields=output_fields
+            )
+        except Exception as e:
+            msg = str(e)
+            # Milvus reports missing index with messages containing 'index not found'
+            if 'index not found' in msg or 'No index found' in msg or 'index does not exist' in msg:
+                logger.warning(f"Search failed due to missing index: {e}. Creating index and retrying...")
+                try:
+                    self.create_index()
+                except Exception as ie:
+                    logger.error(f"Failed to create index after search failure: {ie}")
+                    raise
+                # Retry search once
+                results = self.collection.search(
+                    data=query_embeddings,
+                    anns_field="embedding",
+                    param=search_params,
+                    limit=top_k,
+                    expr=filter_expr,
+                    output_fields=output_fields
+                )
+            else:
+                # Unknown error - re-raise
+                raise
         
         # Format results
         formatted_results = []
