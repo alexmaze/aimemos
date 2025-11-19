@@ -117,6 +117,7 @@ Authorization: Bearer {token}
     "session_id": "session_id",
     "role": "user",
     "content": "你好",
+    "content_type": "content",
     "rag_context": null,
     "rag_sources": null,
     "created_at": "2025-11-17T08:00:00"
@@ -126,6 +127,7 @@ Authorization: Bearer {token}
     "session_id": "session_id",
     "role": "assistant",
     "content": "你好！有什么我可以帮助你的吗？",
+    "content_type": "content",
     "rag_context": "...",
     "rag_sources": [...],
     "created_at": "2025-11-17T08:00:01"
@@ -145,26 +147,40 @@ Authorization: Bearer {token}
 }
 ```
 
-**响应**（Server-Sent Events格式）：
+**响应**（Server-Sent Events格式，使用ChatStreamChunk结构）：
 ```
-data: {"type": "rag_step", "step": "search_start", "data": {"kb_id": "kb_id"}}
+data: {"type":"rag_step","step":"search_start","data":{"kb_id":"kb_id"},"content":null,"content_type":null}
 
-data: {"type": "rag_step", "step": "search_complete", "data": {"count": 5}}
+data: {"type":"rag_step","step":"search_complete","data":{"count":5},"content":null,"content_type":null}
 
-data: {"type": "rag_step", "step": "context_build", "data": {}}
+data: {"type":"rag_step","step":"context_build","data":{},"content":null,"content_type":null}
 
-data: {"type": "rag_step", "step": "context_complete", "data": {"sources": 5}}
+data: {"type":"rag_step","step":"context_complete","data":{"sources":5},"content":null,"content_type":null}
 
-data: {"type": "rag_step", "step": "generate_start", "data": {}}
+data: {"type":"rag_step","step":"generate_start","data":{},"content":null,"content_type":null}
 
-data: {"type": "message", "content": "XX技术"}
+data: {"type":"message","content":"XX技术","content_type":"content","step":null,"data":null}
 
-data: {"type": "message", "content": "是一种"}
+data: {"type":"message","content":"是一种","content_type":"content","step":null,"data":null}
 
-data: {"type": "message", "content": "..."}
+data: {"type":"message","content":"...","content_type":"content","step":null,"data":null}
 
-data: {"type": "done"}
+data: {"type":"done","content":null,"content_type":null,"step":null,"data":null}
 ```
+
+**流式响应数据结构（ChatStreamChunk）**：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| type | string | 是 | 数据块类型：`message`(消息)、`rag_step`(RAG步骤)、`done`(完成)、`error`(错误) |
+| content | string | 否 | 消息内容（仅type=message时使用） |
+| content_type | string | 否 | 内容类型：`thinking`(思考过程)或`content`(正文)，仅在type=message时有效 |
+| step | string | 否 | RAG步骤名称（仅type=rag_step时使用） |
+| data | object | 否 | 步骤数据或错误详情 |
+
+**content_type 说明**：
+- `thinking`: 表示这是AI的思考过程，通常不直接展示给用户，或以特殊样式展示
+- `content`: 表示这是正文内容，应该正常展示给用户
 
 ## 数据模型
 
@@ -187,6 +203,7 @@ data: {"type": "done"}
 | session_id | string | 所属会话ID |
 | role | string | 角色：user 或 assistant |
 | content | string | 消息内容 |
+| content_type | string | 内容类型：thinking(思考过程) 或 content(正文)，默认为content |
 | rag_context | string \| null | RAG检索的上下文 |
 | rag_sources | string \| null | RAG来源信息（JSON） |
 | created_at | datetime | 创建时间 |
@@ -284,8 +301,15 @@ async function sendMessage(sessionId: string, content: string) {
             // 显示RAG处理进度
             break;
           case 'message':
-            console.log('消息片段:', data.content);
-            // 追加到聊天界面
+            console.log('消息片段:', data.content, '类型:', data.content_type);
+            // 根据content_type区分处理
+            if (data.content_type === 'thinking') {
+              // 思考过程：可以用特殊样式显示或放在折叠区域
+              appendThinkingContent(data.content);
+            } else {
+              // 正文内容：正常追加到聊天界面
+              appendMessageContent(data.content);
+            }
             break;
           case 'done':
             console.log('响应完成');
@@ -362,8 +386,26 @@ uv run aimemos
 使用FastAPI的 `StreamingResponse` 配合 Server-Sent Events (SSE) 协议实现流式响应：
 
 - 媒体类型：`text/event-stream`
-- 数据格式：每行以 `data: ` 开头，后跟JSON数据
+- 数据格式：每行以 `data: ` 开头，后跟ChatStreamChunk的JSON序列化数据
+- 结构化格式：所有流式数据使用统一的ChatStreamChunk模型，包含type、content、content_type等字段
 - 连接保持：客户端保持连接直到收到 `done` 事件
+
+### 思考过程与正文内容的区分
+
+系统支持区分AI的思考过程和最终输出内容：
+
+- **content_type字段**：在ChatMessageResponse和ChatStreamChunk中都包含content_type字段
+  - `thinking`: 表示AI的内部思考过程、推理步骤
+  - `content`: 表示最终给用户的回复内容
+  
+- **存储**：content_type字段会保存到数据库中，便于历史消息的回溯和分析
+
+- **使用场景**：
+  - 当使用支持思考过程的LLM（如OpenAI o1系列模型）时，可以将思考部分标记为thinking
+  - 前端可以选择隐藏、折叠或用特殊样式展示thinking内容
+  - 对于调试和分析AI行为，thinking内容提供了宝贵的洞察
+
+- **默认行为**：如果不特别处理，所有内容默认为content类型，保持向后兼容
 
 ### RAG集成
 
@@ -374,8 +416,9 @@ uv run aimemos
 ### 数据库设计
 
 - **chat_sessions** 表：存储会话基本信息
-- **chat_messages** 表：存储消息内容，通过外键关联会话
+- **chat_messages** 表：存储消息内容，通过外键关联会话，包含content_type字段用于区分思考过程和正文
 - **索引优化**：在 user_id、session_id、created_at 上建立索引
+- **数据迁移**：自动支持从旧版本数据库升级，为content_type字段提供默认值
 
 ## 注意事项
 
@@ -384,6 +427,7 @@ uv run aimemos
 3. **流式超时**：建议客户端设置合理的超时时间
 4. **并发控制**：大量并发请求时注意LLM服务的性能
 5. **数据隔离**：每个用户只能访问自己的会话和消息
+6. **向后兼容**：现有的客户端和数据库会自动兼容新的content_type字段（默认为content）
 
 ## 扩展建议
 
