@@ -8,7 +8,7 @@ from ..db.repositories.chat_message import ChatMessageRepository
 from ..models.chat_session import ChatSession
 from ..models.chat_message import ChatMessage
 from ..schemas.chat_session import ChatSessionCreate, ChatSessionUpdate
-from ..schemas.chat_message import ChatMessageCreate, ChatStreamChunk, ContentType
+from ..schemas.chat_message import ChatMessageCreate, ChatStreamChunk
 
 # RAG lazy import variables. We avoid importing rag at module import time to
 # prevent ImportError / circular import problems. Use _init_rag_once() to
@@ -156,23 +156,18 @@ class ChatService:
         
         如果会话关联了知识库，会使用RAG检索相关内容。
         返回Server-Sent Events格式的流。
+        流式响应使用固定的ChatStreamChunk结构。
         """
         # Check if RAG is available
         if not RAG_AVAILABLE:
-            chunk = ChatStreamChunk(
-                type="error",
-                content="RAG功能未启用，请安装相关依赖"
-            )
+            chunk = ChatStreamChunk(type="error", text="RAG功能未启用，请安装相关依赖")
             yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
             return
         
         # 验证会话存在
         session = self.get_session(user_id, session_id)
         if not session:
-            chunk = ChatStreamChunk(
-                type="error",
-                content="会话不存在"
-            )
+            chunk = ChatStreamChunk(type="error", text="会话不存在")
             yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
             return
         
@@ -180,8 +175,7 @@ class ChatService:
         user_message = self.message_repo.create(
             session_id=session_id,
             role='user',
-            content=data.content,
-            content_type="content"
+            content=data.content
         )
         
         # 获取历史消息构建上下文
@@ -289,12 +283,13 @@ class ChatService:
         yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
         
         # 调用LLM流式生成
+        # 收集思考过程和正文内容
+        thinking_process = ""
         assistant_content = ""
-        current_content_type = ContentType.CONTENT  # 默认为正文内容
+        in_thinking = False  # 用于检测是否在思考过程中
         
-        # Note: The LLM may provide structured output that includes thinking.
-        # For now, we default to 'content' type. In the future, this can be
-        # enhanced to detect thinking sections based on LLM response format.
+        # Note: 这里假设LLM可能返回包含思考过程的结构化输出。
+        # 当前默认所有内容都作为正文。未来可以根据特殊标记或LLM响应格式来区分。
         try:
             for chunk_data in self.llm_client.chat_completion(
                 messages=messages,
@@ -306,30 +301,34 @@ class ChatService:
                     delta = chunk_data['choices'][0].get('delta', {})
                     if 'content' in delta:
                         content_chunk = delta['content']
+                        
+                        # 检测思考过程标记（示例：如果内容包含特殊标记）
+                        # 这里可以根据实际LLM的输出格式来判断
+                        # 例如：某些LLM可能使用 <thinking>...</thinking> 标记
+                        # 当前实现：将所有内容作为正文
                         assistant_content += content_chunk
                         
-                        # 发送消息块，使用ChatStreamChunk格式
+                        # 发送内容块，使用ChatStreamChunk格式
                         chunk = ChatStreamChunk(
-                            type="message",
-                            content=content_chunk,
-                            content_type=current_content_type
+                            type="content",
+                            text=content_chunk
                         )
                         yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
         
         except Exception as e:
             chunk = ChatStreamChunk(
                 type="error",
-                content=f"生成回复失败: {str(e)}"
+                text=f"生成回复失败: {str(e)}"
             )
             yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
             return
         
-        # 保存助手消息
+        # 保存助手消息（同时包含思考过程和正文）
         self.message_repo.create(
             session_id=session_id,
             role='assistant',
+            thinking_process=thinking_process if thinking_process else None,
             content=assistant_content,
-            content_type=current_content_type.value,
             rag_context=rag_context,
             rag_sources=json.dumps(rag_sources, ensure_ascii=False) if rag_sources else None
         )

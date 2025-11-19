@@ -116,8 +116,8 @@ Authorization: Bearer {token}
     "id": "message_id",
     "session_id": "session_id",
     "role": "user",
+    "thinking_process": null,
     "content": "你好",
-    "content_type": "content",
     "rag_context": null,
     "rag_sources": null,
     "created_at": "2025-11-17T08:00:00"
@@ -126,8 +126,8 @@ Authorization: Bearer {token}
     "id": "message_id_2",
     "session_id": "session_id",
     "role": "assistant",
+    "thinking_process": "用户打招呼，我应该礼貌回应并询问如何帮助",
     "content": "你好！有什么我可以帮助你的吗？",
-    "content_type": "content",
     "rag_context": "...",
     "rag_sources": [...],
     "created_at": "2025-11-17T08:00:01"
@@ -149,38 +149,44 @@ Authorization: Bearer {token}
 
 **响应**（Server-Sent Events格式，使用ChatStreamChunk结构）：
 ```
-data: {"type":"rag_step","step":"search_start","data":{"kb_id":"kb_id"},"content":null,"content_type":null}
+data: {"type":"rag_step","text":null,"step":"search_start","data":{"kb_id":"kb_id"}}
 
-data: {"type":"rag_step","step":"search_complete","data":{"count":5},"content":null,"content_type":null}
+data: {"type":"rag_step","text":null,"step":"search_complete","data":{"count":5}}
 
-data: {"type":"rag_step","step":"context_build","data":{},"content":null,"content_type":null}
+data: {"type":"rag_step","text":null,"step":"context_build","data":{}}
 
-data: {"type":"rag_step","step":"context_complete","data":{"sources":5},"content":null,"content_type":null}
+data: {"type":"rag_step","text":null,"step":"context_complete","data":{"sources":5}}
 
-data: {"type":"rag_step","step":"generate_start","data":{},"content":null,"content_type":null}
+data: {"type":"rag_step","text":null,"step":"generate_start","data":{}}
 
-data: {"type":"message","content":"XX技术","content_type":"content","step":null,"data":null}
+data: {"type":"thinking","text":"让我分析一下这个问题...","step":null,"data":null}
 
-data: {"type":"message","content":"是一种","content_type":"content","step":null,"data":null}
+data: {"type":"thinking","text":"需要考虑技术的核心特点...","step":null,"data":null}
 
-data: {"type":"message","content":"...","content_type":"content","step":null,"data":null}
+data: {"type":"content","text":"XX技术","step":null,"data":null}
 
-data: {"type":"done","content":null,"content_type":null,"step":null,"data":null}
+data: {"type":"content","text":"是一种","step":null,"data":null}
+
+data: {"type":"content","text":"...","step":null,"data":null}
+
+data: {"type":"done","text":null,"step":null,"data":null}
 ```
 
 **流式响应数据结构（ChatStreamChunk）**：
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| type | string | 是 | 数据块类型：`message`(消息)、`rag_step`(RAG步骤)、`done`(完成)、`error`(错误) |
-| content | string | 否 | 消息内容（仅type=message时使用） |
-| content_type | string | 否 | 内容类型：`thinking`(思考过程)或`content`(正文)，仅在type=message时有效 |
+| type | string | 是 | 数据块类型：`thinking`(思考过程)、`content`(正文内容)、`rag_step`(RAG步骤)、`done`(完成)、`error`(错误) |
+| text | string | 否 | 文本内容（仅type=thinking或content时使用） |
 | step | string | 否 | RAG步骤名称（仅type=rag_step时使用） |
 | data | object | 否 | 步骤数据或错误详情 |
 
-**content_type 说明**：
-- `thinking`: 表示这是AI的思考过程，通常不直接展示给用户，或以特殊样式展示
-- `content`: 表示这是正文内容，应该正常展示给用户
+**type 说明**：
+- `thinking`: AI的思考过程，前端可以选择隐藏、折叠或以特殊样式展示
+- `content`: 正文内容，应该正常展示给用户
+- `rag_step`: RAG检索步骤信息
+- `done`: 流式响应完成
+- `error`: 错误信息
 
 ## 数据模型
 
@@ -202,8 +208,8 @@ data: {"type":"done","content":null,"content_type":null,"step":null,"data":null}
 | id | string | 消息ID（UUID） |
 | session_id | string | 所属会话ID |
 | role | string | 角色：user 或 assistant |
-| content | string | 消息内容 |
-| content_type | string | 内容类型：thinking(思考过程) 或 content(正文)，默认为content |
+| thinking_process | string \| null | 思考过程（如果有）。一条消息可以同时包含思考过程和正文内容 |
+| content | string | 消息正文内容 |
 | rag_context | string \| null | RAG检索的上下文 |
 | rag_sources | string \| null | RAG来源信息（JSON） |
 | created_at | datetime | 创建时间 |
@@ -284,6 +290,10 @@ async function sendMessage(sessionId: string, content: string) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
 
+  // 收集思考过程和正文内容
+  let thinkingContent = '';
+  let mainContent = '';
+
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -300,22 +310,25 @@ async function sendMessage(sessionId: string, content: string) {
             console.log(`RAG步骤: ${data.step}`, data.data);
             // 显示RAG处理进度
             break;
-          case 'message':
-            console.log('消息片段:', data.content, '类型:', data.content_type);
-            // 根据content_type区分处理
-            if (data.content_type === 'thinking') {
-              // 思考过程：可以用特殊样式显示或放在折叠区域
-              appendThinkingContent(data.content);
-            } else {
-              // 正文内容：正常追加到聊天界面
-              appendMessageContent(data.content);
-            }
+          case 'thinking':
+            console.log('思考过程:', data.text);
+            thinkingContent += data.text;
+            // 显示思考过程（可以放在折叠区域或特殊样式）
+            displayThinking(data.text);
+            break;
+          case 'content':
+            console.log('正文片段:', data.text);
+            mainContent += data.text;
+            // 追加到聊天界面正文区域
+            displayContent(data.text);
             break;
           case 'done':
             console.log('响应完成');
+            console.log('完整思考过程:', thinkingContent);
+            console.log('完整正文:', mainContent);
             break;
           case 'error':
-            console.error('错误:', data.content);
+            console.error('错误:', data.text);
             break;
         }
       }
@@ -387,25 +400,33 @@ uv run aimemos
 
 - 媒体类型：`text/event-stream`
 - 数据格式：每行以 `data: ` 开头，后跟ChatStreamChunk的JSON序列化数据
-- 结构化格式：所有流式数据使用统一的ChatStreamChunk模型，包含type、content、content_type等字段
+- 结构化格式：所有流式数据使用统一的ChatStreamChunk模型，包含type、text、step、data等字段
 - 连接保持：客户端保持连接直到收到 `done` 事件
 
-### 思考过程与正文内容的区分
+### 思考过程与正文内容的分离
 
-系统支持区分AI的思考过程和最终输出内容：
+系统支持在单条消息中同时包含思考过程和正文内容：
 
-- **content_type字段**：在ChatMessageResponse和ChatStreamChunk中都包含content_type字段
-  - `thinking`: 表示AI的内部思考过程、推理步骤
-  - `content`: 表示最终给用户的回复内容
+- **设计原则**：一条完整的消息包含`thinking_process`（可选）和`content`（必填）两个独立字段
+  - `thinking_process`: AI的内部思考过程、推理步骤（可选，可以为null）
+  - `content`: 最终给用户的回复内容（必填）
   
-- **存储**：content_type字段会保存到数据库中，便于历史消息的回溯和分析
+- **流式传输**：在流式响应中，通过`type`字段区分：
+  - `type: "thinking"`: 思考过程的流式片段
+  - `type: "content"`: 正文内容的流式片段
+  - 前端会收集所有thinking片段和content片段，最终保存为一条完整消息
+  
+- **数据库存储**：一条消息记录同时包含`thinking_process`和`content`字段，保持关联性
 
-- **使用场景**：
-  - 当使用支持思考过程的LLM（如OpenAI o1系列模型）时，可以将思考部分标记为thinking
-  - 前端可以选择隐藏、折叠或用特殊样式展示thinking内容
+- **前端展示**：
+  - 可以选择隐藏、折叠或用特殊样式展示thinking内容
   - 对于调试和分析AI行为，thinking内容提供了宝贵的洞察
+  - 用户消息通常不包含thinking_process，只有content
 
-- **默认行为**：如果不特别处理，所有内容默认为content类型，保持向后兼容
+- **优势**：
+  - ✅ 思考过程和正文内容保持关联，存储在同一条消息中
+  - ✅ 前端可以灵活决定如何展示思考内容
+  - ✅ 向后兼容，thinking_process可以为null
 
 ### RAG集成
 
@@ -416,9 +437,12 @@ uv run aimemos
 ### 数据库设计
 
 - **chat_sessions** 表：存储会话基本信息
-- **chat_messages** 表：存储消息内容，通过外键关联会话，包含content_type字段用于区分思考过程和正文
+- **chat_messages** 表：存储消息内容，通过外键关联会话
+  - 包含`thinking_process`字段用于存储思考过程（可为null）
+  - 包含`content`字段用于存储正文内容
+  - 一条消息同时包含思考过程和正文，保持关联性
 - **索引优化**：在 user_id、session_id、created_at 上建立索引
-- **数据迁移**：自动支持从旧版本数据库升级，为content_type字段提供默认值
+- **数据迁移**：自动支持从旧版本数据库升级，为thinking_process字段提供默认值null
 
 ## 注意事项
 
@@ -427,7 +451,7 @@ uv run aimemos
 3. **流式超时**：建议客户端设置合理的超时时间
 4. **并发控制**：大量并发请求时注意LLM服务的性能
 5. **数据隔离**：每个用户只能访问自己的会话和消息
-6. **向后兼容**：现有的客户端和数据库会自动兼容新的content_type字段（默认为content）
+6. **向后兼容**：现有的客户端和数据库会自动兼容新的thinking_process字段（默认为null）
 
 ## 扩展建议
 

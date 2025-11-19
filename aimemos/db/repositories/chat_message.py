@@ -26,8 +26,8 @@ class ChatMessageRepository:
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL,
                     role TEXT NOT NULL,
+                    thinking_process TEXT,
                     content TEXT NOT NULL,
-                    content_type TEXT DEFAULT 'content',
                     rag_context TEXT,
                     rag_sources TEXT,
                     created_at TEXT NOT NULL,
@@ -35,10 +35,10 @@ class ChatMessageRepository:
                 )
             """)
             
-            # Add content_type column if it doesn't exist (migration for existing databases)
+            # Add thinking_process column if it doesn't exist (migration for existing databases)
             try:
                 conn.execute("""
-                    ALTER TABLE chat_messages ADD COLUMN content_type TEXT DEFAULT 'content'
+                    ALTER TABLE chat_messages ADD COLUMN thinking_process TEXT
                 """)
             except sqlite3.OperationalError:
                 # Column already exists, ignore
@@ -56,7 +56,7 @@ class ChatMessageRepository:
         session_id: str,
         role: str,
         content: str,
-        content_type: str = "content",
+        thinking_process: Optional[str] = None,
         rag_context: Optional[str] = None,
         rag_sources: Optional[str] = None
     ) -> ChatMessage:
@@ -67,10 +67,10 @@ class ChatMessageRepository:
         with self.db.get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO chat_messages (id, session_id, role, content, content_type, rag_context, rag_sources, created_at)
+                INSERT INTO chat_messages (id, session_id, role, thinking_process, content, rag_context, rag_sources, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (message_id, session_id, role, content, content_type, rag_context, rag_sources, now)
+                (message_id, session_id, role, thinking_process, content, rag_context, rag_sources, now)
             )
             conn.commit()
         
@@ -81,7 +81,7 @@ class ChatMessageRepository:
         with self.db.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, session_id, role, content, content_type, rag_context, rag_sources, created_at
+                SELECT id, session_id, role, thinking_process, content, rag_context, rag_sources, created_at
                 FROM chat_messages
                 WHERE id = ?
                 """,
@@ -94,8 +94,8 @@ class ChatMessageRepository:
                     id=row[0],
                     session_id=row[1],
                     role=row[2],
-                    content=row[3],
-                    content_type=row[4] or "content",  # Default to 'content' for existing records
+                    thinking_process=row[3],
+                    content=row[4],
                     rag_context=row[5],
                     rag_sources=row[6],
                     created_at=datetime.fromisoformat(row[7])
@@ -112,7 +112,7 @@ class ChatMessageRepository:
         with self.db.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, session_id, role, content, content_type, rag_context, rag_sources, created_at
+                SELECT id, session_id, role, thinking_process, content, rag_context, rag_sources, created_at
                 FROM chat_messages
                 WHERE session_id = ?
                 ORDER BY created_at ASC
@@ -127,8 +127,8 @@ class ChatMessageRepository:
                     id=row[0],
                     session_id=row[1],
                     role=row[2],
-                    content=row[3],
-                    content_type=row[4] or "content",  # Default to 'content' for existing records
+                    thinking_process=row[3],
+                    content=row[4],
                     rag_context=row[5],
                     rag_sources=row[6],
                     created_at=datetime.fromisoformat(row[7])
