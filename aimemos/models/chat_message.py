@@ -15,6 +15,7 @@ class ChatMessage(BaseModel):
     session_id: str  # 所属会话ID
     role: str  # 'user' 或 'assistant'
     content: str  # 消息内容
+    content_type: str = "content"  # 内容类型：'thinking'(思考过程) 或 'content'(正文)
     
     # RAG相关字段
     rag_context: Optional[str] = None  # RAG检索到的上下文

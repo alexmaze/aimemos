@@ -27,12 +27,22 @@ class ChatMessageRepository:
                     session_id TEXT NOT NULL,
                     role TEXT NOT NULL,
                     content TEXT NOT NULL,
+                    content_type TEXT DEFAULT 'content',
                     rag_context TEXT,
                     rag_sources TEXT,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
                 )
             """)
+            
+            # Add content_type column if it doesn't exist (migration for existing databases)
+            try:
+                conn.execute("""
+                    ALTER TABLE chat_messages ADD COLUMN content_type TEXT DEFAULT 'content'
+                """)
+            except sqlite3.OperationalError:
+                # Column already exists, ignore
+                pass
             
             # 创建索引
             conn.execute("""
@@ -46,6 +56,7 @@ class ChatMessageRepository:
         session_id: str,
         role: str,
         content: str,
+        content_type: str = "content",
         rag_context: Optional[str] = None,
         rag_sources: Optional[str] = None
     ) -> ChatMessage:
@@ -56,10 +67,10 @@ class ChatMessageRepository:
         with self.db.get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO chat_messages (id, session_id, role, content, rag_context, rag_sources, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO chat_messages (id, session_id, role, content, content_type, rag_context, rag_sources, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (message_id, session_id, role, content, rag_context, rag_sources, now)
+                (message_id, session_id, role, content, content_type, rag_context, rag_sources, now)
             )
             conn.commit()
         
@@ -70,7 +81,7 @@ class ChatMessageRepository:
         with self.db.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, session_id, role, content, rag_context, rag_sources, created_at
+                SELECT id, session_id, role, content, content_type, rag_context, rag_sources, created_at
                 FROM chat_messages
                 WHERE id = ?
                 """,
@@ -84,9 +95,10 @@ class ChatMessageRepository:
                     session_id=row[1],
                     role=row[2],
                     content=row[3],
-                    rag_context=row[4],
-                    rag_sources=row[5],
-                    created_at=datetime.fromisoformat(row[6])
+                    content_type=row[4] or "content",  # Default to 'content' for existing records
+                    rag_context=row[5],
+                    rag_sources=row[6],
+                    created_at=datetime.fromisoformat(row[7])
                 )
             return None
     
@@ -100,7 +112,7 @@ class ChatMessageRepository:
         with self.db.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, session_id, role, content, rag_context, rag_sources, created_at
+                SELECT id, session_id, role, content, content_type, rag_context, rag_sources, created_at
                 FROM chat_messages
                 WHERE session_id = ?
                 ORDER BY created_at ASC
@@ -116,9 +128,10 @@ class ChatMessageRepository:
                     session_id=row[1],
                     role=row[2],
                     content=row[3],
-                    rag_context=row[4],
-                    rag_sources=row[5],
-                    created_at=datetime.fromisoformat(row[6])
+                    content_type=row[4] or "content",  # Default to 'content' for existing records
+                    rag_context=row[5],
+                    rag_sources=row[6],
+                    created_at=datetime.fromisoformat(row[7])
                 )
                 for row in rows
             ]
