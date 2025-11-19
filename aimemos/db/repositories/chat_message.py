@@ -26,6 +26,7 @@ class ChatMessageRepository:
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL,
                     role TEXT NOT NULL,
+                    thinking_process TEXT,
                     content TEXT NOT NULL,
                     rag_context TEXT,
                     rag_sources TEXT,
@@ -33,6 +34,15 @@ class ChatMessageRepository:
                     FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
                 )
             """)
+            
+            # Add thinking_process column if it doesn't exist (migration for existing databases)
+            try:
+                conn.execute("""
+                    ALTER TABLE chat_messages ADD COLUMN thinking_process TEXT
+                """)
+            except sqlite3.OperationalError:
+                # Column already exists, ignore
+                pass
             
             # 创建索引
             conn.execute("""
@@ -46,6 +56,7 @@ class ChatMessageRepository:
         session_id: str,
         role: str,
         content: str,
+        thinking_process: Optional[str] = None,
         rag_context: Optional[str] = None,
         rag_sources: Optional[str] = None
     ) -> ChatMessage:
@@ -56,10 +67,10 @@ class ChatMessageRepository:
         with self.db.get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO chat_messages (id, session_id, role, content, rag_context, rag_sources, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO chat_messages (id, session_id, role, thinking_process, content, rag_context, rag_sources, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (message_id, session_id, role, content, rag_context, rag_sources, now)
+                (message_id, session_id, role, thinking_process, content, rag_context, rag_sources, now)
             )
             conn.commit()
         
@@ -70,7 +81,7 @@ class ChatMessageRepository:
         with self.db.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, session_id, role, content, rag_context, rag_sources, created_at
+                SELECT id, session_id, role, thinking_process, content, rag_context, rag_sources, created_at
                 FROM chat_messages
                 WHERE id = ?
                 """,
@@ -83,10 +94,11 @@ class ChatMessageRepository:
                     id=row[0],
                     session_id=row[1],
                     role=row[2],
-                    content=row[3],
-                    rag_context=row[4],
-                    rag_sources=row[5],
-                    created_at=datetime.fromisoformat(row[6])
+                    thinking_process=row[3],
+                    content=row[4],
+                    rag_context=row[5],
+                    rag_sources=row[6],
+                    created_at=datetime.fromisoformat(row[7])
                 )
             return None
     
@@ -100,7 +112,7 @@ class ChatMessageRepository:
         with self.db.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, session_id, role, content, rag_context, rag_sources, created_at
+                SELECT id, session_id, role, thinking_process, content, rag_context, rag_sources, created_at
                 FROM chat_messages
                 WHERE session_id = ?
                 ORDER BY created_at ASC
@@ -115,10 +127,11 @@ class ChatMessageRepository:
                     id=row[0],
                     session_id=row[1],
                     role=row[2],
-                    content=row[3],
-                    rag_context=row[4],
-                    rag_sources=row[5],
-                    created_at=datetime.fromisoformat(row[6])
+                    thinking_process=row[3],
+                    content=row[4],
+                    rag_context=row[5],
+                    rag_sources=row[6],
+                    created_at=datetime.fromisoformat(row[7])
                 )
                 for row in rows
             ]

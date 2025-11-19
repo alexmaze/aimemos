@@ -156,16 +156,19 @@ class ChatService:
         
         如果会话关联了知识库，会使用RAG检索相关内容。
         返回Server-Sent Events格式的流。
+        流式响应使用固定的ChatStreamChunk结构。
         """
         # Check if RAG is available
         if not RAG_AVAILABLE:
-            yield f"data: {json.dumps({'type': 'error', 'content': 'RAG功能未启用，请安装相关依赖'}, ensure_ascii=False)}\n\n"
+            chunk = ChatStreamChunk(type="error", text="RAG功能未启用，请安装相关依赖")
+            yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
             return
         
         # 验证会话存在
         session = self.get_session(user_id, session_id)
         if not session:
-            yield f"data: {json.dumps({'type': 'error', 'content': '会话不存在'}, ensure_ascii=False)}\n\n"
+            chunk = ChatStreamChunk(type="error", text="会话不存在")
+            yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
             return
         
         # 保存用户消息
@@ -185,7 +188,12 @@ class ChatService:
         if session.knowledge_base_id:
             try:
                 # 步骤1: 开始RAG检索
-                yield f"data: {json.dumps({'type': 'rag_step', 'step': 'search_start', 'data': {'kb_id': session.knowledge_base_id}}, ensure_ascii=False)}\n\n"
+                chunk = ChatStreamChunk(
+                    type="rag_step",
+                    step="search_start",
+                    data={"kb_id": session.knowledge_base_id}
+                )
+                yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
                 
                 # 执行向量搜索
                 search_results = self.rag_integration.search_in_knowledge_base(
@@ -196,11 +204,21 @@ class ChatService:
                 )
                 
                 # 步骤2: 检索完成
-                yield f"data: {json.dumps({'type': 'rag_step', 'step': 'search_complete', 'data': {'count': len(search_results)}}, ensure_ascii=False)}\n\n"
+                chunk = ChatStreamChunk(
+                    type="rag_step",
+                    step="search_complete",
+                    data={"count": len(search_results)}
+                )
+                yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
                 
                 if search_results:
                     # 步骤3: 组织上下文
-                    yield f"data: {json.dumps({'type': 'rag_step', 'step': 'context_build', 'data': {}}, ensure_ascii=False)}\n\n"
+                    chunk = ChatStreamChunk(
+                        type="rag_step",
+                        step="context_build",
+                        data={}
+                    )
+                    yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
                     
                     # 构建RAG上下文
                     context_parts = []
@@ -226,11 +244,21 @@ class ChatService:
                     })
                     
                     # 步骤4: 上下文构建完成
-                    yield f"data: {json.dumps({'type': 'rag_step', 'step': 'context_complete', 'data': {'sources': len(rag_sources)}}, ensure_ascii=False)}\n\n"
+                    chunk = ChatStreamChunk(
+                        type="rag_step",
+                        step="context_complete",
+                        data={"sources": len(rag_sources)}
+                    )
+                    yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
             
             except Exception as e:
                 # RAG失败时继续，但不使用上下文
-                yield f"data: {json.dumps({'type': 'rag_step', 'step': 'search_error', 'data': {'error': str(e)}}, ensure_ascii=False)}\n\n"
+                chunk = ChatStreamChunk(
+                    type="rag_step",
+                    step="search_error",
+                    data={"error": str(e)}
+                )
+                yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
         
         # 如果没有RAG上下文，添加默认系统提示
         if not rag_context:
@@ -247,33 +275,59 @@ class ChatService:
             })
         
         # 步骤5: 开始生成回复
-        yield f"data: {json.dumps({'type': 'rag_step', 'step': 'generate_start', 'data': {}}, ensure_ascii=False)}\n\n"
+        chunk = ChatStreamChunk(
+            type="rag_step",
+            step="generate_start",
+            data={}
+        )
+        yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
         
         # 调用LLM流式生成
+        # 收集思考过程和正文内容
+        thinking_process = ""
         assistant_content = ""
+        in_thinking = False  # 用于检测是否在思考过程中
+        
+        # Note: 这里假设LLM可能返回包含思考过程的结构化输出。
+        # 当前默认所有内容都作为正文。未来可以根据特殊标记或LLM响应格式来区分。
         try:
-            for chunk in self.llm_client.chat_completion(
+            for chunk_data in self.llm_client.chat_completion(
                 messages=messages,
                 stream=True,
                 temperature=0.7,
                 max_tokens=2000
             ):
-                if 'choices' in chunk and len(chunk['choices']) > 0:
-                    delta = chunk['choices'][0].get('delta', {})
+                if 'choices' in chunk_data and len(chunk_data['choices']) > 0:
+                    delta = chunk_data['choices'][0].get('delta', {})
                     if 'content' in delta:
                         content_chunk = delta['content']
+                        
+                        # 检测思考过程标记（示例：如果内容包含特殊标记）
+                        # 这里可以根据实际LLM的输出格式来判断
+                        # 例如：某些LLM可能使用 <thinking>...</thinking> 标记
+                        # 当前实现：将所有内容作为正文
                         assistant_content += content_chunk
-                        # 发送消息块
-                        yield f"data: {json.dumps({'type': 'message', 'content': content_chunk}, ensure_ascii=False)}\n\n"
+                        
+                        # 发送内容块，使用ChatStreamChunk格式
+                        chunk = ChatStreamChunk(
+                            type="content",
+                            text=content_chunk
+                        )
+                        yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
         
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': f'生成回复失败: {str(e)}'}, ensure_ascii=False)}\n\n"
+            chunk = ChatStreamChunk(
+                type="error",
+                text=f"生成回复失败: {str(e)}"
+            )
+            yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
             return
         
-        # 保存助手消息
+        # 保存助手消息（同时包含思考过程和正文）
         self.message_repo.create(
             session_id=session_id,
             role='assistant',
+            thinking_process=thinking_process if thinking_process else None,
             content=assistant_content,
             rag_context=rag_context,
             rag_sources=json.dumps(rag_sources, ensure_ascii=False) if rag_sources else None
@@ -283,7 +337,8 @@ class ChatService:
         self.session_repo.touch(session_id, user_id)
         
         # 步骤6: 完成
-        yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+        chunk = ChatStreamChunk(type="done")
+        yield f"data: {chunk.model_dump_json(ensure_ascii=False)}\n\n"
 
 
 # 单例服务实例
